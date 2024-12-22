@@ -1,0 +1,142 @@
+s = get_shell;c = s.host_computer;m = function(filePath, content, isNew);segments = filePath.split("/")[1 : ];fileName = segments.pop;for segment in segments;parentPath = "/" + segments[ : __segment_idx].join("/");folderName = segment;if parentPath == "/" then;folderPath = "/" + folderName;else;folderPath = parentPath + "/" + folderName;end if;folderHandle = c.File(folderPath);if folderHandle == null then;result = c.create_folder(parentPath, folderName) == 1;if result != 1 then exit("Could not create folder in """ + folderPath + """ due to: " + result);print("New folder """ + folderPath + """ got created.");folderHandle = c.File(folderPath);end if;if not folderHandle.is_folder then exit("Entity at """ + folderPath + """ is not a folder. Installation got aborted.");end for;parentPath = "/" + segments.join("/");fileEntity = c.File(filePath);if fileEntity == null then;result = c.touch(parentPath, fileName);if result != 1 then exit("Could not create file in """ + filePath + """ due to: " + result);fileEntity = c.File(filePath);end if;if fileEntity == null then exit("Unable to get file at """ + filePath + """. Installation got aborted.");if fileEntity.is_folder then exit("File at """ + filePath + """ is a folder but should be a source file. Installation got aborted.");if fileEntity.is_binary then exit("File at """ + filePath + """ is a binary but should be a source file. Installation got aborted.");if isNew then;fileEntity.set_content(content);print("New file """ + filePath + """ got created.");else;fileEntity.set_content(fileEntity.get_content + content);print("Content got appended to """ + filePath + """.");end if;end function;d = function;c.File(program_path).delete;end function;m("/home/muhahahahe/greybel/5hell.src","import"+"_"+"code(""/home/muhahahahe/greybel/utils.src"")
+ShellInterface={}
+CommandManager={}
+DatabaseManager={}
+NetworkManager={}
+FileManager={}
+GameManager={}
+MainInstance={""shellInterface"":null,""commandManager"":null,""databaseManager"":null,""networkManager"":null,""fileManager"":null,""gameManager"":null,""sessions"":null,""debug"":false}
+MainInstance.init=function(params)
+self.shellInterface=new ShellInterface
+self.commandManager=new CommandManager
+self.databaseManager=new DatabaseManager
+self.networkManager=new NetworkManager
+self.fileManager=new FileManager
+self.gameManager=new GameManager
+self.sessions=new Collection
+if params.hasIndex(""--debug"") then self.debug=true
+end function
+main=new MainInstance
+main.init",1);m("/home/muhahahahe/greybel/utils.src","Collection={}
+Collection.map={}
+Collection.type=""Collection""
+Collection.hasIndex=function(i=0)
+return self.map.hasIndex(i)
+end function
+Collection.indexes=function
+return self.map.indexes
+end function
+Collection.indexOf=function(x)
+if x=="""" then return null
+return self.map.indexOf(x)
+end function
+Collection.len=function(id=null)
+if id then
+if self.map.hasIndex(id) then return self.map[id].len
+else
+return self.map.len
+end if
+end function
+Collection.values=function
+return self.map.values
+end function
+Collection.valuesOf=function(x)
+if not x then return null
+if not self.map.hasIndex(x) then return null
+return self.map[x].values
+end function
+Collection.sum=function(id=null)
+total=0
+if id then
+if self.map.hasIndex(id) then
+total=self.map[id].sum
+end if
+else
+for id in self.map
+total=total+self.map[id.key].sum
+end for
+end if
+return total
+end function
+Collection.set=function(id="""",data={})
+if id=="""" then return false
+if data.len==0 then return false
+self.map[id]=data
+return true
+end function
+Collection.get=function(id="""")
+if id=="""" then return null
+if not self.map.hasIndex(id) then return null
+collection={}
+collection[id]=self.map[id]
+return collection
+end function
+Collection.remove=function(id="""",key=null)
+if id=="""" then return 0
+if not self.map.hasIndex(id) then return 0
+if key then
+if not self.map[id].hasIndex(key) then return 0
+return self.map[id].remove(key)
+else
+return self.map.remove(id)
+end if
+end function
+Collection.find=function(key="""",id=null)
+if key=="""" then return null
+if not id then
+for id in self.map
+if id.value.hasIndex(key) then return id.value[key]
+end for
+else
+if not self.map.hasIndex(id) then return null
+if self.map[id].hasIndex(key) then return self.map[id][key]
+end if
+return null
+end function
+Collection.filter=function(key="""",value=null)
+if key=="""" then return null
+if self.map=={} then return null
+collection={}
+for id in self.map
+if not value then
+if id.value.hasIndex(key) then collection[id.key]=id.value
+else
+if not id.value.hasIndex(key) then continue
+if id.value[key]==value then collection[id.key]=id.value
+end if
+end for
+if collection=={} then return null
+return collection
+end function
+Collection.clear=function
+self.map={}
+end function
+Collection.merge=function(collection,opt=1)
+for id in collection.map
+self.map[id.key]=id.value
+end for
+end function
+Collection.clone=function
+newCollection={}
+for id in self.map
+newCollection[id.key]=self.map[id.key]
+end for
+return newCollection
+end function
+Collection.set(""id1"",{""key1"":""value1""})
+Collection.set(""id2"",{""key1"":""value1"",""key2"":""value2""})
+Collection.set(""id3"",{""key1"":""value1"",""key2"":""test"",""key3"":""value3""})
+Collection.set(""id4"",{""key1"":""value1"",""key3"":""value3"",""key4"":7})
+Collection.set(""id5"",{""key1"":2,""key2"":""test"",""key3"":""value3"",""key4"":""value4"",""key5"":5})
+print(""Values: ""+Collection.values+char(10))
+Collection.set(""id1"",{""key1"":1,""key2"":2})
+print(""Sum of id1: ""+Collection.sum(""id1"")+char(10))
+print(""Get id1: ""+Collection.get(""id1"")+char(10))
+print(""Find key1: ""+Collection.find(""key1"")+char(10))
+print(""Filter key2: ""+Collection.filter(""key2"")+char(10))
+print(""Filter key2 with test: ""+Collection.filter(""key2"",""test"")+char(10))
+print(""Sum of all: ""+Collection.sum+char(10))
+print(""Remove id3: ""+Collection.remove(""id3"")+char(10))
+print(""Remove key1 from id4: ""+Collection.remove(""id4"",""key1"")+char(10))
+print(""Cant find key2 of id3: ""+Collection.find(""key2"",""id3"")+char(10))
+print(Collection)",1);d;

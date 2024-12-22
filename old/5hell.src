@@ -1,0 +1,386 @@
+// Current as of version 3.1.5
+// 5hell.src by Plu70 aka ra'al aka jhook
+// 5hell.src (the code below) is open source
+// The contents of 5hell.5pk (formerly 5hell.so), however, are not open source.
+// Actually it's all open source now*
+// 5hell (either the .src, the .so, the .5pk, or the combined script known simply as 5hell)
+// is available for a small 1337coin fee. After purchase 5hell may be used in whatever way
+// the end user sees fit.
+// 5hell.src may be altered in part or in whole by the end user but may ONLY
+// be distributed in it's original form. 5hell.src or 5hell as a compiled binary
+// that is distributed by a third party and altered MUST make the alteration known
+// to the end user. Failure to disclose alterations with redistribution voids
+// the license of use and may result in civil penalties. Alterations for personal
+// use are, of course, encouraged. Enjoy responsibly.
+//
+// 5hell is now covered by the MIT license which superscedes the above license.
+///////////////////////// INSTRUCTIONS /////////////////////////////////////////
+
+// 5hell.src allows you to customize 5hell to your liking. You may add, remove,
+// and even replace commands to, from, and within 5hell. Most users will only
+// need to set a password in the SECURITY section below the command.shell function.
+// You may delete the security section if you do not want to use a password with 5hell.
+// Add imported code lines or your own functions as per the template below the
+// command.shell function.
+// Note: as of version 3.1.2 the plugin cobble.5pk is available. 
+// This is accessed with the cob command. It allows manipulation
+// of the new 'custom_object' wich is a shared memory_space for programs within nested launches
+// Note: as of version 3.1.2 5hell may be loaded to the custom object.
+// see MAP OPTION below and choose one option (default has already been chosen).
+//
+// //////////////MAP OPTION////////////////
+// uncomment only ONE of the 'command =' lines. At least one must be selected.
+// option {} == normal 5hell mode. default.
+// option get_custom_object == load 5hell to custom object. EXPERIMENTAL!!!
+// choose one below:
+command = {} // default
+//command = get_custom_object // experimental, use with cobble.5pk for best results.
+//
+//////////END MAP OPTION//////////////////
+//
+/////////// IMPRT LINE /////////
+//////////// change the below line to the path where you placed 5hell.5pk //////
+import_code("/root/src/5hell.5pk")
+///////////// END IMPRT LINE /////////
+// once built you may use the 'makfit' command to
+// build with a smaller filesize. see makfit -h
+// note: makfit works on a source, not a binary
+// build it once to get access to makfit then
+// use makfit to rebuild it with a smaller file size
+//////////////////////////////////////////
+//
+// additional imports should go below main!
+// security section is below main!!
+// do not forget the security!!
+//
+////////////////////// END INSTRUCTIONS ////////////////////////////////////////
+//
+//////////////////// BEGIN @HOME CONFIGURATION!!!!/////////////////////////////////////////////
+//-- skipping this configuration means you can't use the transmit command. up to you.
+//// important: don't comment it out, just leave at default values if you aren't going to use it.
+// edit the below line to include the credentials for your (ssh) hashim server. the transmit command will use this information to connect.
+//globals.HOME_SERVER = ["string: ip", "number: port", "string: username", "string: password", "string: ssh | ftp", "string: /path/to/pass (default: /root/pass)"]
+globals.HOME_SERVER = ["ip.add.re.ss", 22, "root", "password", "ssh", "/root/pass"]
+// you may set an ip without setting a password if you only want to use the @home alias to fetch the ip
+// for example with: rshell @home
+  // @home will be replaced with your ip, no password needed in this case
+  // password is needed for advanced functions, such as with the transmit command
+/////// ALWAYS USE A PASSWORD (SECURITY SECTION BELLOW command.shell) WHEN SETTING AN @HOME_SERVER PASSWORD!!!!! ////////////////////////////////
+////// END @HOME CONFIGURATION//////////////////////////////////////////////////
+//
+//
+///////BEGIN MAIN ////////////////////
+// only edit this part if you know what you are doing!!!!! ////
+command.shell = function(input=null)
+  //print // an extra line before the prompt, if you want
+  running = true
+  full_prompt = 1
+  while running
+    print // an extra line before the prompt, if you want
+    pipe = []  // pipe control, do not edit
+    prompt = [] // prompt control, do not edit
+    next = [] // pipe control, do not edit
+
+    // ###############################################################################
+    // ################ begin customizables one ################################################
+    /////// begin prompt preparation
+    bang = "|> " // YOUR PROMPT, edit to your liking /// updated to include get_name
+    // see full_prompt section for an advanced prompt
+    // below is a simple example
+    // if full_prompt then bang = globals.checkUser(shell)+"@"+globals.localmachine.get_name+":"+globals.currentPath+"|> " // stock FULLPROMPT, edit to your liking
+    // below is a more complicated example
+    // behold the magnificent 5hell prompt! thanks to anonymous and anarchic geniuses whose contributions made this possible
+    //////////////////// full prompt for better prompting //////////////////////
+    if full_prompt then 
+      angle = "<color=#FF0000>"+char(20057) 
+      part1 = "<b><rotate=180><voffset=.70em>"
+      if not globals.GLASSPOOL then part2 = "</rotate></voffset><voffset=1em><size=75%><color=#E2DEDE>" else part2 = "</rotate></voffset><voffset=1em><size=75%><color=#2382FFFF>"
+      user_level = globals.checkUser(localmachine) 
+      user_level_line = "<color=#00FF00><u></color>"
+      if user_level == "root" then user_level_line = "<color=#FF0000><u></color>"
+      if user_level == "guest" then user_level_line = "<color=#FFFFFF><u></color>"
+      // info works best with about 31-32 characters
+      info = "["+localmachine.public_ip+"@"+localmachine.local_ip
+      pspace = "<cspace=-"+(info.len * .75)+"em>]</u>"
+      part3 = "</size></voffset><cspace=-.25em>"
+      scadoosh = "<color=#FFFFFFFF><b>|></b>"
+      user_guess = active_user
+      if globals.GLASSPOOL then 
+        scadoosh = "<color=#2382FFFF>|></b>"
+        user_guess = globals.checkUser(localmachine)
+      end if
+      bang = part1 + angle + part2 + user_level_line + info + pspace + part3 + angle + "<voffset=-.25em>"+"></b></cspace><color=#E2DEDE><size=75%>"+user_guess+"@"+localmachine.get_name+":"+currentPath+"</size>"+scadoosh+" "
+    end if
+    ////////////////////////// end full_prompt ////////////////////
+    // glasspool prompt, edit to your liking
+    if globals.GLASSPOOL then bang = colorLightBlue+bang.trim+"<color=#FFFFFF> " 
+    ////////// end prompt preperation
+
+    // get user input unless command.shell was called internally (do, cc, glasspool...) // do not edit
+    if input then prompt = input.split(" ") else prompt = user_input(bang).split(" ") 
+    // flow control, do not edit
+    if input and indexOf("|#-/", input[0]) != null then // thanks clover!
+      return 
+    else 
+      input = null
+    end if
+    if prompt[0] == "|" then continue // catch stray pipes in input prompt but not comment lines bc why would you type a comment into a one shot line? like for real?
+    // end flow control
+    // #####################################################################
+    // ####################### end customizables one ############################
+
+    // process floating single quote input ie: " i am a long parameter string "
+    if DEBUG then print "pre single_quote_prompt"
+    if DEBUG then print prompt
+    while prompt.indexOf(char(34)) != null
+        s_string = prompt[:prompt.indexOf(char(34))]
+        if DEBUG then print "s_string: "+s_string
+        e_string = prompt[prompt.indexOf(char(34))+1:]
+        if DEBUG then print "e_string: "+e_string
+        if e_string.indexOf(char(34)) != null then 
+            f_string = e_string[:e_string.indexOf(char(34))]
+            if DEBUG then print "f_string: "+f_string
+            f_string = f_string.join(char(32))
+            z_string = e_string[e_string.indexOf(char(34))+1:]
+            prompt = s_string+[f_string]+z_string
+        else 
+          break
+        end if
+    end while
+    // end floating quote processing
+
+    // remove/comment this line if you dont want the command buffer
+    globals.command_buffer.push(prompt.join(" ").remove(" | return")) 
+
+    // process piping
+    if DEBUG then print "debug: pre_pipe prompt is: "+prompt
+    // begin pipe control, edit with extreme caution.
+    if prompt.indexOf("|") >= 0 then  
+      prompt.push("|")
+      while prompt.len
+        pipe.push(prompt[:prompt.indexOf("|")])
+        prompt = prompt[prompt.indexOf("|")+1:]
+      end while
+    else
+      pipe.push(prompt[0:])
+    end if                           
+    // end pipe control
+
+    // process the pre_processed input
+    while pipe.len                   
+      // begin command parsing
+      prompt = pipe.pull // no touchy
+      if next.len then prompt.push(next.pull) // no touchy
+
+      // some folks like to edit the below line to do command.cc instead of continue
+      if not prompt.len or prompt[0] == "" or prompt[0] == 0 or prompt[0] == "0" or prompt[0] == null then continue
+      //
+      if prompt[0] == "return" then 
+        print colorWhite+"<size=50%><u><color=red>5</color>hell: returning..."
+        if prompt.len > 1 then 
+          return prompt[1] 
+        else 
+          return 0 // might edit this to return a value instead
+        end if
+      end if
+      //
+      // ############################### begin customizables two ###########################
+      // begin shortcuts
+      if prompt[0] == "bat" and prompt.hasIndex(1) then prompt = ["do","1","-f"]+prompt[1:]
+      if prompt[0] == "set" or prompt[0] == "get" then prompt = ["cob"]+prompt
+      if prompt[0] == "lock" then prompt = "perms lock all".split(" ") // use this shortcut for extra qol!!
+      if prompt[0] == "exit" then prompt[0] = "quit"      // caution: too many shortcuts may slow down the script
+      if prompt[0] == "sc" then prompt[0] = "silentclean"
+      if prompt[0] == "gp" then prompt[0] = "glasspool"
+      if prompt[0] == "prompt" then // toggle full_prompt on or off
+          full_prompt = not full_prompt
+          continue
+      end if
+      // end shortcuts
+      // // begin easy clip
+      prompt = globals._ez_clip(prompt) // _ez_clip is located in 5phinx.5pk
+      // end easy clip
+      // ############################ end customizables two ###############################
+
+      // post_pre_processing
+      prompt = prompt + ([0] * (5 - prompt.len)) // check this magic out sanity check #1
+      prompt = prompt[:5] 
+      // sanity check #2
+      for pp in prompt 
+        if pp == "" then prompt[__pp_idx] = 0
+      end for
+
+      // processing
+
+      // you know what, there was a distinct lack of using guard clauses here
+      // and i dont know if its for performance reasons but i think we
+      // can sacrifice a little bit of performance for readability
+      // (especially if its in this user facing code) - Clover
+
+      cmdName = prompt[0]
+
+      // handle case where prompt is "shell" actually
+      if cmdName == "shell" then
+        // if you'd like the 'shell' command to return additional info, do that here
+        if prompt[1] == "--debug" then
+          print "shell: " + ("de"*globals.DEBUG) + "activating DEBUG mode"
+          globals.DEBUG = not globals.DEBUG
+          continue
+        end if
+        print(colorRed+instance.name+char(8482)+CT+" v "+ver+" by Plu70")
+        print("["+colorCyan+command.indexes.len+CT+"] commands and")
+        print("["+colorGold+globals.dict_a.len+CT+"] passwords loaded.")
+        state = "in"
+        if globals.GLASSPOOL then state = ""
+        gp = " " + state + "active "
+        print("["+colorLightBlue+"GLASSPOOL:"+CT+colorOrange+gp+CT+"]")
+        print("["+colorWhite+shell.host_computer.local_ip+CT+colorLightBlue+" <size=75%>@</size> "+CT+colorWhite+shell.host_computer.public_ip+CT+"]")
+        continue 
+      end if
+
+      if not command.hasIndex(cmdName) then
+        print(cmdName+": unrecognized command (type <b>help</b> for command list)")
+        continue
+      end if
+
+      f = @command[cmdName]
+      if typeof(@f) != "function" then // san check #3
+        print(colorOrange+"shell: use <b>cob get [element]</b> to retrieve element.")
+        continue
+      end if
+
+      catch = null
+      // we need this for compatibility with improperly constructed functions
+      if str(@f) == "FUNCTION()" then args = 0 else args = str(@f).split(", ").len // get the number of args required by the function
+      if DEBUG then print("target function takes: "+args+" arguments.")
+      if DEBUG then print("debug: preparing to fire: "+char(10)+prompt)
+      if args == 4 then
+        catch = f(prompt[1], prompt[2], prompt[3], prompt[4])
+      else if args == 3 then
+        catch = f(prompt[1], prompt[2], prompt[3])
+      else if args == 2 then
+        catch = f(prompt[1], prompt[2])
+      else if args == 1 then
+        catch = f(prompt[1])
+      else
+        catch = f
+      end if
+
+      if DEBUG then///// begin 3.1.2 compatibility changes
+        print("@catch: "+typeof(@catch))  // attn! catch may now be a function!
+        //if typeof(@catch) != "function" then print("catch:  "+catch)
+      end if
+
+      // post processing
+      if not @catch then
+        // do nothing
+        continue
+      end if
+
+      if DEBUG then print "debug: pipe.len: "+pipe.len+" next: "+pipe ///////////// fix me for iffffffff
+      if pipe.len > 0 and pipe[0] == "return" then return @catch // added by me
+      print(@catch)
+      if pipe.len then next.push(@catch) // using @reference instead of literal bc functions may now be passed
+    end while         // end command parsing
+  end while          // end main loop
+end function
+//////END MAIN//////
+//
+// 5hell uses the following color palatte:
+// GLOBAL       DEFINITION
+//colorRed = "<color=red><b>"
+//colorGreen = "<color=green><b>"
+//colorWhite = "<color=white><b>"
+//colorCyan = "<color=#00FFFF><b>"
+//colorGold = "<color=#CCCC00FF><b>"
+//colorBlack = "<color=#000000FF><b>"
+//colorOrange = "<color=#FF8400FF><b>"
+//colorMagenta = "<color=#FF00C8FF><b>"
+//colorLightBlue = "<color=#2382FFFF><b>"
+//CT = "</color></b>"
+//
+// (reference the above for your own commands)
+// (of course you can also add your own!)
+// more globals in template.5pk.src
+//
+if DEBUG then print("<size=75%>loading customizations (if any)...</size>")
+////////////////// IMPRTS SECTION ////////////////////////////
+/////// PASTE YOUR IMPORTED COMMANDS HERE!!  ////////
+/////// BE SURE TO FOLLOW THE TEMPLATE BELOW! ///////
+// e.g:
+//
+// command.my_func = function(arg1, arg2=0,arg3=0,arg4=0)
+// if arg1 == "help" or arg1 == "-h" then return "Usage: command -- info"
+//    // code and additional functions
+//    return 0  // or return soemthing
+// end function
+//
+
+
+/////////////////////////////////////////////////////////////////////////////////////////////
+// or
+//
+// imp*cde ( "/path/your.5pk")   // where your.5pk contains your function in the above format
+// *note the .5pk extension is just a convention and not a hard requirement.
+//
+//////////////////END IMPRTS SECTION ////////////////////////////
+//
+//
+//////////////////////////////////// SECURITY GOES HERE //////////////////////
+///// customize this line fully for the most security ////////
+  access_codes = {"Alpha":"your password here", "Beta":"your other password here if you want"}//////////////////////////////////////////////////////////////
+  // if you rename access_codes be sure to edit the below line
+  rnac = access_codes.indexes
+  rnac.shuffle
+  rnac = rnac.pop
+  if user_input(colorCyan+"Cyberdeck Authentication Code ["+colorWhite+rnac+colorCyan+"]: "+CT,1,0) != access_codes[rnac] then
+    wait(300)
+    exit("frag off, chumba")
+  end if
+/////////////////END SECURITY///////////////////
+//
+//
+if DEBUG then print("<color=yellow><size=75%>checking for rkit/5hell.rc")
+// auto 'do' a batch file on startup
+// unlike a standard 5hell do 1 -f /file launch, this will not result in an exit on completion
+// only executes if 5hell.rc is located in a folder named rkit
+dorc = globals._startup_resource_configuration
+if DEBUG then print dorc 
+//
+if DEBUG then print("<size=75%>starting 5hell in debug mode...</size>")
+///////////////BEGIN launch_with_do CONTROL /////////////////////////
+/////////do not edit the below section (especially do not remove the | return !!)//////////
+//// not kidding, it causes an infinite loop ////
+// you have been warned! //
+// Usage: 5hell do [#] [opt:-f] [opt: command | /path (if -f)] [opt:up_to_2_params (if not -f)]
+// What is it: this allows you to launch 5hell with instructions. see "do -h" in 5hell for more info
+// basically it calls the internal scripting service. this is obscenely powerful! for real, try it out.
+// 5hell can be configured to write instructions for itself and launch itself with those instructions.
+// just have to be creative. contact Plu70/jhook with -any- questions about how this works.
+// e.g. 5hell do 100 ping 1.1.1.1
+// e.g. 5hell do 1 -f myMacro.bat
+// e.g. 5hell do 1
+// (the last one will open the editor where you may type out a list of commands)
+//
+if params and params[0] == "do" then
+  cmd = "do"
+  if params.len >= 2 then cmd = cmd + " " + params[1]
+  if params.len >= 3 then cmd = cmd + " " + params[2]
+  if params.len > 3 then
+    if params[2] == "-f" then
+      cmd = cmd + " " + params[3]
+    else
+      cmd = cmd + " " + params[3:5].join(" ")
+    end if
+  end if
+  command.quit(command.shell(cmd + " | return"))
+end if
+////////////////END l_w_d CONTROL/////////////////
+//
+///begin main///
+while true
+command.quit(command.shell)
+end while
+////end main////
+//////////end of do not edit section//////////////
+///EOF///

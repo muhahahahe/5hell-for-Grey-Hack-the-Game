@@ -1,0 +1,35 @@
+import_code("/src/utils.src")
+
+ShellInterface = {}
+CommandManager = {}
+DatabaseManager = {}
+NetworkManager = {}
+FileManager = {}
+GameManager = {}
+
+MainInstance = {
+	"shellInterface": null,
+	"commandManager": null,
+	"databaseManager": null,
+	"networkManager": null,
+	"fileManager": null,
+	"gameManager": null,
+	"sessions": null,
+
+	//default settings
+	"debug": false,
+}
+MainInstance.init = function(params)
+	self.shellInterface = new ShellInterface
+	self.commandManager = new CommandManager
+	self.databaseManager = new DatabaseManager
+	self.networkManager = new NetworkManager
+	self.fileManager = new FileManager
+	self.gameManager = new GameManager
+	self.sessions = new Collection
+	if params.hasIndex("--debug") then self.debug = true
+end function
+
+// Initialize the main instance
+main = new MainInstance
+main.init

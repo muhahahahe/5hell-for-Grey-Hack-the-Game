@@ -3,6 +3,10 @@
 Join us on Discord!
 https://discord.gg/AFqsGaCDfS
 
+
+## REFACTOR!
+below will be adjusted
+
 **Shell emulator and multitool for the video game Grey Hack.**
 
 Now open source.
