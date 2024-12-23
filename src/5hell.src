@@ -1,11 +1,11 @@
 import_code("/src/utils.src")
 
-ShellInterface = {}
-CommandManager = {}
-DatabaseManager = {}
-NetworkManager = {}
-FileManager = {}
-GameManager = {}
+ShellInterface = {} // most likely imported from another file
+CommandManager = {} // imported from another file
+DatabaseManager = {} // imported from another file
+NetworkManager = {} // imported from another file
+FileManager = {} // imported from another file
+GameManager = {} // imported from another file
 
 MainInstance = {
 	"shellInterface": null,
@@ -32,4 +32,4 @@ end function
 
 // Initialize the main instance
 main = new MainInstance
-main.init
+main.init(params)
