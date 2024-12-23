@@ -107,9 +107,27 @@ Collection.clear = function // Clear all entries in the map
 end function
 
 Collection.merge = function(collection, opt=1) // Merge another collection into this one
-    for id in collection.map
-        self.map[id.key] = id.value
-    end for
+    // opt 1: merge overwrite self
+    if opt == 1 then
+        for id in collection.map
+            self.map[id.key] = id.value
+        end for
+    // opt 2: merge overwrite merger
+    else if opt == 2 then
+        for id in self.map
+            collection.map[id.key] = id.value
+        end for
+        self.map = collection.map
+    // opt 3: merge keep both
+    else if opt == 3 then
+        for id in collection.map
+            if self.map.hasIndex(id.key) then
+                self.map[id.key+"_new"] = id.value
+            else
+                self.map[id.key] = id.value
+            end if
+        end for
+    end if
 end function
 
 Collection.clone = function // Create a deep copy of the collection
